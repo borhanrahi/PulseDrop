@@ -29,7 +29,8 @@ src-tauri/target
 target
 Cargo.lock
 .env
+.agents
 
+# Ignore blueprint specifications
 pulsedrop_cross_platform_tauri_v2_blueprint.md
 
-pulsedrop_cross_platform_tauri_v2_blueprint.md
