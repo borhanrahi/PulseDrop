@@ -24,7 +24,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 axum = { version = "0.8", features = ["ws", "multipart"] }
-reqwest = { version = "0.12", features = ["stream", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 local-ip-address = "0.6"
 mdns-sd = "0.13"
 uuid = { version = "1", features = ["v4"] }
@@ -32,7 +32,7 @@ sha2 = "0.10"
 hex = "0.4"
 rand = "0.8"
 futures-util = "0.3"
-tokio-tungstenite = "0.26"
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "handshake"] }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 tauri-plugin-barcode-scanner = "2"
