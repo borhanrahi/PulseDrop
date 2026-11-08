@@ -256,6 +256,7 @@ export function usePulseEvents() {
                 direction: msg.direction || 'incoming',
                 total_bytes: msg.total_bytes,
                 bytes_transferred: msg.bytes_transferred,
+                speed_bps: msg.speed_bps || 0,
                 status: msg.status || 'transferring',
                 sender_name: msg.sender_name,
               },
@@ -270,6 +271,7 @@ export function usePulseEvents() {
                 direction: 'incoming',
                 total_bytes: msg.file_size,
                 bytes_transferred: msg.file_size,
+                speed_bps: 0,
                 status: 'completed',
                 sender_name: msg.sender_name,
               },
@@ -602,6 +604,10 @@ export function usePulseEvents() {
         },
       }));
 
+      let lastSampleTime = Date.now();
+      let lastLoadedBytes = 0;
+      let currentSpeedBps = 0;
+
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/upload');
@@ -616,6 +622,15 @@ export function usePulseEvents() {
 
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable) {
+            const now = Date.now();
+            const elapsed = (now - lastSampleTime) / 1000;
+            if (elapsed >= 0.2) {
+              const diff = event.loaded - lastLoadedBytes;
+              currentSpeedBps = Math.round(diff / elapsed);
+              lastSampleTime = now;
+              lastLoadedBytes = event.loaded;
+            }
+
             setActiveTransfers((prev) => ({
               ...prev,
               [transferId]: {
@@ -624,6 +639,7 @@ export function usePulseEvents() {
                 direction: 'outgoing',
                 bytes_transferred: event.loaded,
                 total_bytes: event.total,
+                speed_bps: currentSpeedBps,
                 status: 'transferring',
               },
             }));
@@ -640,6 +656,7 @@ export function usePulseEvents() {
                 direction: 'outgoing',
                 bytes_transferred: file.size,
                 total_bytes: file.size,
+                speed_bps: 0,
                 status: 'completed',
               },
             }));
@@ -653,6 +670,7 @@ export function usePulseEvents() {
                 direction: 'outgoing',
                 bytes_transferred: 0,
                 total_bytes: file.size,
+                speed_bps: 0,
                 status: 'failed',
               },
             }));
@@ -669,6 +687,7 @@ export function usePulseEvents() {
               direction: 'outgoing',
               bytes_transferred: 0,
               total_bytes: file.size,
+              speed_bps: 0,
               status: 'failed',
             },
           }));

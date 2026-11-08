@@ -22,6 +22,7 @@ export interface TransferProgress {
   status: 'transferring' | 'completed' | 'failed' | 'in_progress';
   direction?: 'incoming' | 'outgoing';
   sender_name?: string;
+  speed_bps?: number;
 }
 
 export interface ClipboardItem {

@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { WebSocketServer, WebSocket } from "ws";
 import os from "os";
+import fs from "fs";
+import path from "path";
 import { IncomingMessage, ServerResponse } from "http";
 
 interface StoredFile {
@@ -10,7 +12,7 @@ interface StoredFile {
   name: string;
   size: number;
   type: string;
-  buffer: Buffer;
+  filePath: string;
   senderId: string;
   senderName: string;
   targetId: string;
@@ -43,11 +45,26 @@ function localRelayPlugin(): Plugin {
       const peers = new Map<string, ConnectedPeer>();
       const fileStore = new Map<string, StoredFile>();
 
+      // Spool directory for unlimited file sizes (no memory bottlenecks)
+      const spoolDir = path.join(os.tmpdir(), "pulsedrop_spool");
+      try {
+        if (!fs.existsSync(spoolDir)) {
+          fs.mkdirSync(spoolDir, { recursive: true });
+        }
+      } catch (err) {
+        console.warn("[PulseDrop] Could not create spool dir:", err);
+      }
+
       // Auto-cleanup files older than 15 minutes
       setInterval(() => {
         const now = Date.now();
         fileStore.forEach((file, id) => {
           if (now - file.createdAt > 15 * 60 * 1000) {
+            try {
+              if (fs.existsSync(file.filePath)) {
+                fs.unlinkSync(file.filePath);
+              }
+            } catch {}
             fileStore.delete(id);
           }
         });
@@ -300,23 +317,37 @@ function localRelayPlugin(): Plugin {
             direction: "incoming",
             total_bytes: fileSize,
             bytes_transferred: 0,
+            speed_bps: 0,
             status: "in_progress",
             sender_name: senderName,
           });
           notifyTarget(initProgressMsg);
 
-          const chunks: Buffer[] = [];
+          // Stream directly to spool file on disk (zero memory limit, supports multi-GB files at line speed)
+          const tempFilePath = path.join(spoolDir, `${transferId}-${Date.now()}.dat`);
+          const fileWriteStream = fs.createWriteStream(tempFilePath, { highWaterMark: 512 * 1024 });
+
           let bytesReceived = 0;
           let lastBroadcastTime = 0;
+          let lastSpeedSampleTime = Date.now();
+          let lastBytesSample = 0;
+          let currentSpeedBps = 0;
 
-          req.on("data", (chunk) => {
-            const buf = Buffer.from(chunk);
-            chunks.push(buf);
-            bytesReceived += buf.length;
+          req.on("data", (chunk: Buffer) => {
+            fileWriteStream.write(chunk);
+            bytesReceived += chunk.length;
 
             const now = Date.now();
-            // Throttle to 50ms so UI updates smoothly without flooding network
-            if (now - lastBroadcastTime > 50 || bytesReceived === fileSize) {
+            const timeDiff = (now - lastSpeedSampleTime) / 1000;
+            if (timeDiff >= 0.2) {
+              const bytesDiff = bytesReceived - lastBytesSample;
+              currentSpeedBps = Math.round(bytesDiff / timeDiff);
+              lastSpeedSampleTime = now;
+              lastBytesSample = bytesReceived;
+            }
+
+            // Throttle WebSocket progress broadcasts to 60ms for smooth 60fps UI
+            if (now - lastBroadcastTime > 60 || bytesReceived === fileSize) {
               lastBroadcastTime = now;
               const progressMsg = JSON.stringify({
                 type: "transfer-progress",
@@ -325,6 +356,7 @@ function localRelayPlugin(): Plugin {
                 direction: "incoming",
                 total_bytes: fileSize || bytesReceived,
                 bytes_transferred: bytesReceived,
+                speed_bps: currentSpeedBps,
                 status: bytesReceived >= fileSize && fileSize > 0 ? "completed" : "in_progress",
                 sender_name: senderName,
               });
@@ -333,48 +365,56 @@ function localRelayPlugin(): Plugin {
           });
 
           req.on("end", () => {
-            const buffer = Buffer.concat(chunks);
-            fileStore.set(transferId, {
-              id: transferId,
-              name: fileName,
-              size: fileSize || buffer.length,
-              type: fileType,
-              buffer,
-              senderId,
-              senderName,
-              targetId,
-              createdAt: Date.now(),
+            fileWriteStream.end(() => {
+              fileStore.set(transferId, {
+                id: transferId,
+                name: fileName,
+                size: fileSize || bytesReceived,
+                type: fileType,
+                filePath: tempFilePath,
+                senderId,
+                senderName,
+                targetId,
+                createdAt: Date.now(),
+              });
+
+              const downloadUrl = `/api/download/${transferId}`;
+
+              // Send final completion progress update to receiver
+              const completedMsg = JSON.stringify({
+                type: "transfer-progress",
+                transfer_id: transferId,
+                file_name: fileName,
+                direction: "incoming",
+                total_bytes: fileSize || bytesReceived,
+                bytes_transferred: fileSize || bytesReceived,
+                speed_bps: 0,
+                status: "completed",
+                sender_name: senderName,
+              });
+              notifyTarget(completedMsg);
+
+              const offerMsg = JSON.stringify({
+                type: "file-offer",
+                transfer_id: transferId,
+                file_name: fileName,
+                file_size: fileSize || bytesReceived,
+                sender_name: senderName,
+                sender_id: senderId,
+                download_url: downloadUrl,
+              });
+              notifyTarget(offerMsg);
+
+              res.setHeader("Content-Type", "application/json");
+              res.end(JSON.stringify({ success: true, transferId, downloadUrl }));
             });
+          });
 
-            const downloadUrl = `/api/download/${transferId}`;
-
-            // Send final completion progress update to receiver
-            const completedMsg = JSON.stringify({
-              type: "transfer-progress",
-              transfer_id: transferId,
-              file_name: fileName,
-              direction: "incoming",
-              total_bytes: fileSize || buffer.length,
-              bytes_transferred: fileSize || buffer.length,
-              status: "completed",
-              sender_name: senderName,
-            });
-            notifyTarget(completedMsg);
-
-            const offerMsg = JSON.stringify({
-              type: "file-offer",
-              transfer_id: transferId,
-              file_name: fileName,
-              file_size: fileSize || buffer.length,
-              sender_name: senderName,
-              sender_id: senderId,
-              download_url: downloadUrl,
-            });
-
-            notifyTarget(offerMsg);
-
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ success: true, transferId, downloadUrl }));
+          req.on("error", () => {
+            fileWriteStream.destroy();
+            try {
+              if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+            } catch {}
           });
           return;
         }
@@ -383,19 +423,23 @@ function localRelayPlugin(): Plugin {
           const transferId = url.replace("/api/download/", "").split("?")[0];
           const file = fileStore.get(transferId);
 
-          if (!file) {
+          if (!file || !fs.existsSync(file.filePath)) {
             res.statusCode = 404;
             res.end("File not found or expired");
             return;
           }
 
           res.setHeader("Content-Type", file.type || "application/octet-stream");
-          res.setHeader("Content-Length", file.buffer.length);
+          res.setHeader("Content-Length", file.size);
           res.setHeader(
             "Content-Disposition",
             `attachment; filename="${encodeURIComponent(file.name)}"; filename*=UTF-8''${encodeURIComponent(file.name)}`
           );
-          res.end(file.buffer);
+          res.setHeader("Accept-Ranges", "bytes");
+
+          // High-throughput 512KB read stream for maximum local gigabit performance
+          const readStream = fs.createReadStream(file.filePath, { highWaterMark: 512 * 1024 });
+          readStream.pipe(res);
           return;
         }
 

@@ -13,7 +13,8 @@ import {
   FileText,
   Plus,
   ArrowDownToLine,
-  ArrowUpToLine
+  ArrowUpToLine,
+  Zap
 } from 'lucide-react';
 import { DeviceInfo, TransferProgress, ReceivedFile } from '../types/pulse';
 import { isTauri } from '../hooks/usePulseEvents';
@@ -59,6 +60,30 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  const formatSpeed = (bps?: number) => {
+    if (!bps || bps <= 0) return '';
+    if (bps >= 1024 * 1024 * 1024) {
+      return `${(bps / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
+    }
+    if (bps >= 1024 * 1024) {
+      return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
+    }
+    if (bps >= 1024) {
+      return `${(bps / 1024).toFixed(0)} KB/s`;
+    }
+    return `${bps} B/s`;
+  };
+
+  const formatETA = (transferred: number, total: number, bps?: number) => {
+    if (!bps || bps <= 0 || transferred >= total) return '';
+    const remainingBytes = total - transferred;
+    const seconds = Math.ceil(remainingBytes / bps);
+    if (seconds < 60) return `${seconds}s left`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs}s left`;
   };
 
   const handleSelectFiles = async (mode: 'all' | 'media' = 'all') => {
@@ -355,6 +380,12 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
+                      {transfer.speed_bps && transfer.speed_bps > 0 && !isCompleted && (
+                        <span className="flex items-center gap-1 text-[11px] font-mono font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                          <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
+                          {formatSpeed(transfer.speed_bps)}
+                        </span>
+                      )}
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                         isIncoming 
                           ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
@@ -385,9 +416,16 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between text-[11px] font-mono text-zinc-400">
-                    <span>
-                      {formatBytes(transfer.bytes_transferred)} / {formatBytes(transfer.total_bytes)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span>
+                        {formatBytes(transfer.bytes_transferred)} / {formatBytes(transfer.total_bytes)}
+                      </span>
+                      {transfer.speed_bps && transfer.speed_bps > 0 && !isCompleted && (
+                        <span className="text-amber-400 font-medium">
+                          • {formatETA(transfer.bytes_transferred, transfer.total_bytes, transfer.speed_bps)}
+                        </span>
+                      )}
+                    </div>
                     <span className="flex items-center gap-1 font-sans font-medium">
                       {isCompleted ? (
                         <span className="text-emerald-400 flex items-center gap-1">
@@ -435,7 +473,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
           </h3>
           <p className="mt-1 text-xs text-zinc-400 text-center max-w-xs">
             {pairedPeers.length > 0
-              ? `Streams directly to ${activePeer?.name || 'paired peer'} over high-speed Wi-Fi`
+              ? `Streams directly to ${activePeer?.name || 'paired peer'} at full LAN speed • No file size limits`
               : 'Connect your phone or PC to start transferring files'}
           </p>
 
