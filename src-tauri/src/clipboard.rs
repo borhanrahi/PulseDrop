@@ -7,7 +7,10 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tokio::time::sleep;
 
 pub fn start_clipboard_watcher(app_handle: AppHandle, state: Arc<AppState>) {
-    tokio::spawn(async move {
+    // NOTE: must use Tauri's async runtime here. This function is called from the
+    // synchronous `setup` hook on the main thread, where no Tokio runtime context
+    // exists — a bare `tokio::spawn` would panic and instantly close the app.
+    tauri::async_runtime::spawn(async move {
         loop {
             sleep(Duration::from_millis(600)).await;
 
