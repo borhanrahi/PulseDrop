@@ -23,6 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 
+# 
+pulsedrop_cross_platform_tauri_v2_blueprint.md
+
+
 # Rust / Tauri
 src-tauri/target
 target
