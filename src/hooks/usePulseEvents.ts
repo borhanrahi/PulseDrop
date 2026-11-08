@@ -8,25 +8,48 @@ export const isTauri = (): boolean => {
 
 // Detect browser device metadata
 const getBrowserDevice = (): { id: string; name: string; os: string } => {
-  let storedId = localStorage.getItem('pulsedrop_device_id');
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const pairParam = urlParams?.get('pair');
+
+  let storedId = typeof window !== 'undefined' ? sessionStorage.getItem('pulsedrop_session_id') : null;
+  let isMultiTab = false;
+
   if (!storedId) {
-    storedId = 'web-' + Math.random().toString(36).substring(2, 9);
-    localStorage.setItem('pulsedrop_device_id', storedId);
+    const localId = typeof window !== 'undefined' ? localStorage.getItem('pulsedrop_device_id') : null;
+    // If opening a pairing link matching our localId, this tab is testing pairing with Tab 1 on the same browser
+    if (localId && pairParam && localId === pairParam) {
+      storedId = 'web-peer-' + Math.random().toString(36).substring(2, 7);
+      isMultiTab = true;
+    } else if (localId) {
+      storedId = localId;
+    } else {
+      storedId = 'web-' + Math.random().toString(36).substring(2, 9);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('pulsedrop_device_id', storedId);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('pulsedrop_session_id', storedId);
+    }
   }
 
-  const ua = navigator.userAgent.toLowerCase();
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : '';
   const isIos = /iphone|ipad|ipod/.test(ua);
   const isAndroid = /android/.test(ua);
   const isMac = /macintosh|mac os x/.test(ua);
 
   const os = isIos ? 'ios' : isAndroid ? 'android' : isMac ? 'macos' : 'windows';
-  const name = isIos
+  let name = isIos
     ? 'Apple iPhone'
     : isAndroid
     ? 'Android Phone'
     : isMac
     ? 'MacBook'
     : 'Windows PC';
+
+  if (isMultiTab) {
+    name = `${name} (Tab 2)`;
+  }
 
   return { id: storedId, name, os };
 };
@@ -183,10 +206,19 @@ export function usePulseEvents() {
 
             // In local browser mode, all active peers on the same relay are immediately available to pair
             setPairedPeers((prev) => {
+              // Check if a new peer joined that was not in our paired list
+              const newlyJoined = others.find((o) => !prev.some((p) => p.id === o.id));
+              if (newlyJoined) {
+                setLastPairedPeer(newlyJoined);
+                setLastPairedPeerTimestamp(Date.now());
+              }
+
               // Keep existing paired peers updated with live info
               const updated = prev.map((p) => others.find((o) => o.id === p.id) || p);
               // If none paired yet, automatically pair with other peer for seamless 1-click test!
               if (updated.length === 0 && others.length > 0) {
+                setLastPairedPeer(others[0]);
+                setLastPairedPeerTimestamp(Date.now());
                 return others;
               }
               return updated;

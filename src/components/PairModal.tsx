@@ -11,7 +11,9 @@ import {
   ExternalLink,
   Wifi,
   Network,
-  Globe
+  Globe,
+  Share2,
+  Link as LinkIcon
 } from 'lucide-react';
 import { DeviceInfo, NetworkInterfaceInfo } from '../types/pulse';
 import { isTauri } from '../hooks/usePulseEvents';
@@ -54,7 +56,7 @@ export const PairModal: React.FC<PairModalProps> = ({
     }
   }, [isOpen]);
 
-  // Auto-close modal when another device scans our QR code
+  // Auto-close modal when another device connects via shared link or QR code
   React.useEffect(() => {
     if (
       isOpen &&
@@ -105,6 +107,22 @@ export const PairModal: React.FC<PairModalProps> = ({
     navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'PulseDrop Local Pair',
+          text: `Connect to ${localDevice?.name || 'PulseDrop'} on our local network:`,
+          url: webMobileUrl,
+        });
+      } catch {
+        // User cancelled share
+      }
+    } else {
+      handleCopy();
+    }
   };
 
   const handleManualPair = async () => {
@@ -180,9 +198,9 @@ export const PairModal: React.FC<PairModalProps> = ({
               <ShieldCheck className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-white">Instant Pair</h2>
+              <h2 className="text-base font-semibold text-white">Connect Device</h2>
               <p className="text-xs text-zinc-400">
-                Connect over same Wi-Fi, Ethernet LAN, or office network
+                Share link or scan QR on any PC, Mac, or phone on your network
               </p>
             </div>
           </div>
@@ -194,7 +212,7 @@ export const PairModal: React.FC<PairModalProps> = ({
           </button>
         </div>
 
-        {/* Success Overlay when QR Code is scanned or paired */}
+        {/* Success Overlay when device connects via QR or shared link */}
         {pairingSuccess ? (
           <div className="py-8 px-4 flex flex-col items-center justify-center text-center animate-in zoom-in-95 duration-200">
             <div className="relative flex items-center justify-center w-20 h-20 rounded-3xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 mb-4 shadow-xl shadow-emerald-500/20">
@@ -204,7 +222,7 @@ export const PairModal: React.FC<PairModalProps> = ({
             </div>
 
             <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-2">
-              QR Code Scanned
+              Device Connected
             </span>
 
             <h3 className="text-xl font-bold text-white">Successfully Connected!</h3>
@@ -217,7 +235,7 @@ export const PairModal: React.FC<PairModalProps> = ({
 
             <div className="mt-6 flex items-center gap-2 text-xs text-zinc-400">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Closing window...</span>
+              <span>Closing window automatically...</span>
             </div>
 
             <button
@@ -233,7 +251,7 @@ export const PairModal: React.FC<PairModalProps> = ({
             {networkInterfaces.length > 1 && (
               <div className="mt-3 p-2.5 rounded-xl bg-[#202020] border border-[#2d2d2d]">
                 <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1.5 font-medium">
-                  <span>Select Network to Broadcast:</span>
+                  <span>Broadcast Network Interface:</span>
                   <span className="text-indigo-400 font-mono text-[10px]">Universal LAN</span>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -266,71 +284,100 @@ export const PairModal: React.FC<PairModalProps> = ({
               </div>
             )}
 
-            {/* QR Code Container */}
-            <div className="mt-4 flex flex-col items-center">
-              <div className="p-3.5 bg-white rounded-2xl shadow-xl border border-zinc-200/20">
-                <QRCodeSVG
-                  value={webMobileUrl}
-                  size={190}
-                  level="M"
-                  includeMargin={false}
-                />
-              </div>
-
-              {/* Mobile Clickable URL Box */}
-              <div className="mt-3 w-full bg-[#1e1e1e] border border-[#2a2a2a] rounded-xl p-2.5 flex items-center justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="text-[10px] text-zinc-500 uppercase font-semibold">Web Pairing URL</div>
-                  <div className="text-xs text-indigo-300 font-mono truncate">{webMobileUrl}</div>
+            {/* Universal Link Sharing Section (For PC, Mac, Laptop, Coworkers, or Mobile) */}
+            <div className="mt-3.5 p-3 rounded-xl bg-[#1c1c1c] border border-[#2a2a2a]">
+              <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <LinkIcon className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="text-xs font-semibold text-zinc-200">
+                    Universal Link Sharing
+                  </span>
                 </div>
+                <span className="text-[10px] text-zinc-400 font-medium">PC • Mac • Mobile</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 mb-2.5">
+                Send this link to anyone on your Wi-Fi/Ethernet. When they open it, both devices connect and this modal closes!
+              </p>
+
+              <div className="bg-[#141414] border border-[#262626] rounded-lg p-2 flex items-center justify-between gap-2 mb-2">
+                <span className="text-xs text-indigo-300 font-mono truncate select-all">{webMobileUrl}</span>
                 <a
                   href={webMobileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="p-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 transition-colors shrink-0"
-                  title="Open URL in new tab"
+                  className="p-1.5 rounded-md bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 transition-colors shrink-0"
+                  title="Test in new tab"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               </div>
 
-              <div className="mt-2.5 flex items-center justify-center gap-1.5 text-xs text-zinc-400">
-                <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Scan with your phone's normal camera app</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCopy}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all active:scale-[0.98]"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied ? 'Link Copied to Clipboard!' : 'Copy Universal Link'}</span>
+                </button>
+
+                {typeof navigator !== 'undefined' && 'share' in navigator && (
+                  <button
+                    onClick={handleShare}
+                    className="flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold bg-[#272727] hover:bg-[#313131] text-zinc-200 hover:text-white transition-all active:scale-[0.98]"
+                    title="Share via system dialog"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Share</span>
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Action Buttons: Copy / Scanner */}
-            <div className="mt-4 flex gap-2">
-              <button
-                onClick={handleCopy}
-                className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold bg-[#272727] hover:bg-[#313131] text-zinc-200 hover:text-white transition-all active:scale-[0.98]"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? 'Copied URL!' : 'Copy Pairing Link'}</span>
-              </button>
+            {/* QR Code Container for Phone Cameras */}
+            <div className="mt-3.5 p-3 rounded-xl bg-[#1c1c1c] border border-[#2a2a2a] flex flex-col items-center">
+              <div className="w-full flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-xs font-semibold text-zinc-200">Scan with Phone Camera</span>
+                </div>
+                <span className="text-[10px] text-zinc-400">iOS & Android</span>
+              </div>
+
+              <div className="p-3 bg-white rounded-xl shadow-lg border border-zinc-200/20">
+                <QRCodeSVG
+                  value={webMobileUrl}
+                  size={160}
+                  level="M"
+                  includeMargin={false}
+                />
+              </div>
+
+              <div className="mt-2 text-[11px] text-zinc-400 text-center">
+                Point any mobile camera at this QR code to connect instantly.
+              </div>
 
               {isTauri() && isMobile && (
                 <button
                   onClick={handleMobileScan}
-                  className="flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-all active:scale-[0.98]"
+                  className="mt-2.5 w-full flex items-center justify-center gap-2 py-1.5 px-4 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-all active:scale-[0.98]"
                 >
                   <Camera className="w-3.5 h-3.5" />
-                  <span>Scan QR</span>
+                  <span>Scan QR Code</span>
                 </button>
               )}
             </div>
 
             {/* Direct IP Connect (Universal LAN / Ethernet / Mixed Wifi) */}
-            <div className="mt-4 pt-3.5 border-t border-[#272727]">
-              <div className="flex items-center gap-1.5 mb-1.5">
+            <div className="mt-3.5 pt-3 border-t border-[#272727]">
+              <div className="flex items-center gap-1.5 mb-1">
                 <Globe className="w-3.5 h-3.5 text-emerald-400" />
                 <label className="text-xs font-semibold text-zinc-200">
-                  Direct IP Connect (Ethernet / Cross-Subnet)
+                  Direct IP Connect (Cross-Subnet / Wi-Fi + Ethernet)
                 </label>
               </div>
               <p className="text-[11px] text-zinc-400 mb-2">
-                Connect to any coworker on the office network by typing their IP:
+                Connect directly to a colleague's IP address:
               </p>
               <div className="flex gap-2">
                 <input
@@ -352,8 +399,8 @@ export const PairModal: React.FC<PairModalProps> = ({
             </div>
 
             {/* Manual Pairing Fallback */}
-            <div className="mt-3.5 pt-3 border-t border-[#272727]">
-              <label className="block text-xs font-semibold text-zinc-300 mb-1.5">
+            <div className="mt-3 pt-3 border-t border-[#272727]">
+              <label className="block text-xs font-semibold text-zinc-300 mb-1">
                 Manual Token / Link Input
               </label>
               <div className="flex gap-2">
