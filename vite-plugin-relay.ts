@@ -37,11 +37,11 @@ export function localRelayPlugin(): Plugin {
       // Auto-cleanup files older than 15 minutes
       setInterval(() => {
         const now = Date.now();
-        for (const [id, file] of fileStore.entries()) {
+        fileStore.forEach((file, id) => {
           if (now - file.createdAt > 15 * 60 * 1000) {
             fileStore.delete(id);
           }
-        }
+        });
       }, 60 * 1000);
 
       // Helper to detect LAN IPv4
@@ -104,7 +104,7 @@ export function localRelayPlugin(): Plugin {
 
       // Set up WebSocket server
       const wss = new WebSocketServer({
-        server: server.httpServer,
+        server: server.httpServer as any,
         path: '/ws-relay',
       });
 
@@ -123,14 +123,14 @@ export function localRelayPlugin(): Plugin {
           peers: peerList,
         });
 
-        for (const peer of peers.values()) {
+        peers.forEach((peer) => {
           if (peer.ws.readyState === WebSocket.OPEN) {
             peer.ws.send(msg);
           }
-        }
+        });
       };
 
-      wss.on('connection', (ws: WebSocket, req) => {
+      wss.on('connection', (ws: WebSocket) => {
         let currentPeerId: string | null = null;
 
         ws.on('message', (raw) => {
@@ -160,11 +160,11 @@ export function localRelayPlugin(): Plugin {
                 hash: data.hash || '',
               });
 
-              for (const peer of peers.values()) {
+              peers.forEach((peer) => {
                 if (peer.id !== data.sender_id && peer.ws.readyState === WebSocket.OPEN) {
                   peer.ws.send(payload);
                 }
-              }
+              });
             } else if (data.type === 'pair-request') {
               // Direct pair request between two devices
               const target = peers.get(data.target_id);
@@ -253,11 +253,11 @@ export function localRelayPlugin(): Plugin {
               targetPeer.ws.send(offerMsg);
             } else {
               // Broadcast if no specific target
-              for (const peer of peers.values()) {
+              peers.forEach((peer) => {
                 if (peer.id !== senderId && peer.ws.readyState === WebSocket.OPEN) {
                   peer.ws.send(offerMsg);
                 }
-              }
+              });
             }
 
             res.setHeader('Content-Type', 'application/json');
