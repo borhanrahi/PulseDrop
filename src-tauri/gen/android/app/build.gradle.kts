@@ -15,7 +15,7 @@ val tauriProperties = Properties().apply {
 }
 
 android {
-    compileSdk = 35
+    compileSdk = 37
     namespace = "com.pulsedrop.client"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "true"
