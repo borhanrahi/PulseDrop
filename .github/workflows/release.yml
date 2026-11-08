@@ -43,7 +43,7 @@ jobs:
           body: |
             ## ⚡ PulseDrop ${{ steps.get_version.outputs.tag_name }} Multi-Platform Release
 
-            Zero-cloud, high-speed local file sharing & clipboard synchronization across Windows, macOS, Linux, and Android.
+            Zero-cloud, high-speed local file sharing & clipboard synchronization across Windows, macOS, Linux, Android, and iOS.
 
             ### 📦 Available Downloads
             | Platform | File Type | Description |
@@ -52,6 +52,7 @@ jobs:
             | **macOS** | `.dmg` | macOS Universal (Apple Silicon M1-M4 & Intel 64-bit) |
             | **Linux** | `.AppImage` / `.deb` | Linux portable AppImage & Debian package |
             | **Android** | `.apk` | Sideloadable Android APK for phones & tablets |
+            | **iOS (iPhone/iPad)** | `.ipa` | Sideloadable iOS package (AltStore, SideStore, Sideloadly, TrollStore) |
 
             ---
             *Built automatically by GitHub Actions on commit `${{ github.sha }}`.*
@@ -191,3 +192,74 @@ jobs:
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
           files: release-apk/*.apk
+
+  build-ios:
+    needs: create-release
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Bump Version to ${{ needs.create-release.outputs.version }}
+        run: node ./scripts/bump-version.cjs ${{ needs.create-release.outputs.version }}
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Initialize iOS Project
+        run: |
+          npx tauri ios init --ci || true
+
+      - name: Compile Rust Static Lib for iOS
+        run: |
+          npx tauri ios build --no-bundle
+
+      - name: Build Unsigned Xcode Archive
+        run: |
+          PROJECT_PATH=$(find src-tauri/gen/apple -name "*.xcodeproj" | head -n 1)
+          echo "Found Xcode project: $PROJECT_PATH"
+          SCHEME_NAME=$(xcodebuild -list -project "$PROJECT_PATH" | grep -A 10 "Schemes:" | grep "_iOS" | head -n 1 | tr -d ' ')
+          if [ -z "$SCHEME_NAME" ]; then
+            SCHEME_NAME="PulseDrop_iOS"
+          fi
+          echo "Using scheme: $SCHEME_NAME"
+
+          mkdir -p src-tauri/gen/apple/build
+          xcodebuild archive \
+            -project "$PROJECT_PATH" \
+            -scheme "$SCHEME_NAME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "src-tauri/gen/apple/build/PulseDrop.xcarchive" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package Unsigned IPA
+        run: |
+          APP_BUNDLE=$(find src-tauri/gen/apple/build -name "*.app" -type d | head -n 1)
+          echo "Found .app bundle: $APP_BUNDLE"
+          mkdir -p release-ios/Payload
+          cp -r "$APP_BUNDLE" release-ios/Payload/
+          cd release-ios
+          zip -r "PulseDrop-${{ needs.create-release.outputs.tag_name }}-ios.ipa" Payload
+          ls -lh
+
+      - name: Upload iOS IPA to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          files: release-ios/*.ipa
