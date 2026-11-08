@@ -4,7 +4,15 @@ import {
   FileCheck2, 
   File, 
   FolderOpen, 
-  Download
+  Download,
+  Laptop,
+  Smartphone,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Image,
+  FileText,
+  Plus
 } from 'lucide-react';
 import { DeviceInfo, TransferProgress, ReceivedFile } from '../types/pulse';
 import { isTauri } from '../hooks/usePulseEvents';
@@ -29,7 +37,9 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
   );
   const [isDragging, setIsDragging] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const mediaInputRef = useRef<HTMLInputElement | null>(null);
 
   // Keep selectedPeerId updated if peers list changes
   React.useEffect(() => {
@@ -40,6 +50,8 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     }
   }, [pairedPeers, selectedPeerId]);
 
+  const activePeer = pairedPeers.find((p) => p.id === selectedPeerId) || pairedPeers[0];
+
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -48,14 +60,17 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  const handleSelectFiles = async () => {
+  const handleSelectFiles = async (mode: 'all' | 'media' = 'all') => {
     if (pairedPeers.length === 0) {
       onOpenPairModal();
       return;
     }
 
     const targetPeerId = selectedPeerId || pairedPeers[0]?.id;
-    if (!targetPeerId) return;
+    if (!targetPeerId) {
+      onOpenPairModal();
+      return;
+    }
 
     if (isTauri()) {
       try {
@@ -73,7 +88,11 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
         setErrorMsg('Failed to open file picker: ' + e?.message);
       }
     } else {
-      fileInputRef.current?.click();
+      if (mode === 'media') {
+        mediaInputRef.current?.click();
+      } else {
+        fileInputRef.current?.click();
+      }
     }
   };
 
@@ -160,11 +179,12 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     }
   };
 
-  const hasTransfers = Object.keys(activeTransfers).length > 0;
+  const transferList = Object.values(activeTransfers);
+  const hasTransfers = transferList.length > 0;
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-y-auto p-4 md:p-8 select-none max-w-5xl mx-auto w-full">
-      {/* Hidden browser file input for web mode */}
+    <div className="flex-1 flex flex-col h-full overflow-y-auto p-3 sm:p-5 md:p-8 select-none max-w-4xl mx-auto w-full">
+      {/* Hidden browser file inputs for web mode */}
       <input
         type="file"
         ref={fileInputRef}
@@ -177,135 +197,182 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
           }
         }}
       />
+      <input
+        type="file"
+        ref={mediaInputRef}
+        accept="image/*,video/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            handleWebFilesSelected(Array.from(e.target.files));
+            e.target.value = '';
+          }
+        }}
+      />
 
-      {/* Target Peer Selector Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#272727]">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight bg-gradient-to-r from-white to-[#9B9B9B] bg-clip-text text-transparent">
-            File Drop
-          </h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            Transfer photos, videos, and documents directly over local Wi-Fi
-          </p>
-        </div>
-
-        {/* Peer Selection Menu */}
-        <div className="flex items-center gap-3">
-          {pairedPeers.length > 0 ? (
-            <div className="flex items-center gap-2 bg-[#181818] border border-[#272727] px-3 py-2 rounded-xl">
-              <span className="text-xs text-zinc-400">Send to:</span>
-              <select
-                value={selectedPeerId}
-                onChange={(e) => setSelectedPeerId(e.target.value)}
-                className="bg-transparent text-sm font-semibold text-zinc-100 focus:outline-none cursor-pointer"
-              >
-                {pairedPeers.map((p) => (
-                  <option key={p.id} value={p.id} className="bg-[#181818] text-zinc-100">
-                    {p.name} ({p.os})
-                  </option>
-                ))}
-              </select>
+      {/* Connection & Target Peer Header Card */}
+      <div className="p-3.5 sm:p-4 rounded-2xl bg-[#181818] border border-[#272727] shadow-sm mb-4">
+        {pairedPeers.length > 0 && activePeer ? (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                {activePeer.os.toLowerCase().includes('android') || activePeer.os.toLowerCase().includes('ios') ? (
+                  <Smartphone className="w-5 h-5" />
+                ) : (
+                  <Laptop className="w-5 h-5" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-zinc-100 truncate">
+                    {activePeer.name}
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Connected
+                  </span>
+                </div>
+                <div className="text-xs text-zinc-400 font-mono truncate">
+                  {activePeer.ip ? `${activePeer.ip} • Ready to receive` : 'Local Wi-Fi Peer'}
+                </div>
+              </div>
             </div>
-          ) : (
+
+            {pairedPeers.length > 1 ? (
+              <div className="flex items-center gap-2 bg-[#222222] border border-[#2d2d2d] px-3 py-1.5 rounded-xl self-start sm:self-auto">
+                <span className="text-xs text-zinc-400">Target:</span>
+                <select
+                  value={selectedPeerId}
+                  onChange={(e) => setSelectedPeerId(e.target.value)}
+                  className="bg-transparent text-xs font-semibold text-zinc-200 focus:outline-none cursor-pointer"
+                >
+                  {pairedPeers.map((p) => (
+                    <option key={p.id} value={p.id} className="bg-[#181818] text-zinc-100">
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <button
+                onClick={onOpenPairModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#222222] hover:bg-[#2a2a2a] text-zinc-300 text-xs font-medium border border-[#2d2d2d] self-start sm:self-auto active:scale-95 transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Pair Another</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                <Smartphone className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-zinc-200">No Device Paired</div>
+                <div className="text-xs text-zinc-400">Scan QR to connect your phone or PC</div>
+              </div>
+            </div>
+
             <button
               onClick={onOpenPairModal}
-              className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-all active:scale-[0.98] shadow-md shadow-indigo-600/20"
+              className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 active:scale-95 transition-all shrink-0"
             >
-              Pair Device First
+              Connect Device
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {errorMsg && (
-        <div className="mt-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
-          {errorMsg}
+        <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+          <span>{errorMsg}</span>
+          <button onClick={() => setErrorMsg(null)} className="text-zinc-400 hover:text-white">✕</button>
         </div>
       )}
 
-      {/* Drop Zone Area */}
-      <div className="mt-6 flex-1 flex flex-col justify-center min-h-[260px]">
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={handleSelectFiles}
-          className={`relative flex-1 flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer ${
-            isDragging
-              ? 'border-indigo-500 bg-indigo-500/5 scale-[1.008]'
-              : 'border-[#272727] bg-[#181818]/50 hover:bg-[#181818] hover:border-[#333333]'
-          }`}
-        >
-          <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center shadow-inner mb-4 transition-transform group-hover:scale-110">
-            <UploadCloud className="w-8 h-8" />
-          </div>
-
-          <h3 className="text-base md:text-lg font-semibold text-zinc-100 text-center">
-            {isDragging ? 'Drop files right here' : 'Drop files here or click to browse'}
-          </h3>
-          <p className="mt-1 text-xs text-zinc-400 text-center max-w-sm">
-            {pairedPeers.length > 0
-              ? `Files will stream directly to ${pairedPeers.find((p) => p.id === selectedPeerId)?.name || 'target'}`
-              : 'Pair with your mobile phone or PC to begin transfers'}
-          </p>
-
-          <div className="mt-5 flex items-center gap-2">
-            <span className="text-[11px] font-mono px-2.5 py-1 rounded-md bg-[#222222] text-zinc-400 border border-[#2d2d2d]">
-              High-Speed Local Transfer
-            </span>
-            <span className="text-[11px] font-mono px-2.5 py-1 rounded-md bg-[#222222] text-zinc-400 border border-[#2d2d2d]">
-              No File Size Limits
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Active Transfer Progress Bars */}
+      {/* LIVE FILE TRANSFER PROGRESS BAR (User requested) */}
       {hasTransfers && (
-        <div className="mt-6">
-          <h2 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider mb-3">
-            Active Transfers
-          </h2>
+        <div className="mb-4 p-4 rounded-2xl bg-gradient-to-b from-[#1c1c1c] to-[#161616] border border-[#2a2a2a] shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-200">
+                Live File Transfer
+              </span>
+            </div>
+            <span className="text-xs font-mono text-indigo-400 font-semibold">
+              {transferList.length} Active
+            </span>
+          </div>
+
           <div className="flex flex-col gap-3">
-            {Object.values(activeTransfers).map((transfer) => {
+            {transferList.map((transfer) => {
               const percent =
                 transfer.total_bytes > 0
                   ? Math.min(100, Math.round((transfer.bytes_transferred / transfer.total_bytes) * 100))
                   : 0;
 
+              const isCompleted = transfer.status === 'completed';
+              const isFailed = transfer.status === 'failed';
+
               return (
                 <div
                   key={transfer.transfer_id}
-                  className="p-4 rounded-xl bg-[#181818] border border-[#272727] shadow-sm"
+                  className="p-3.5 rounded-xl bg-[#202020] border border-[#2a2a2a] flex flex-col gap-2"
                 >
-                  <div className="flex items-center justify-between text-xs mb-2">
-                    <div className="flex items-center gap-2 truncate pr-4">
-                      <File className="w-4 h-4 text-indigo-400 shrink-0" />
-                      <span className="font-medium text-zinc-200 truncate">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 truncate min-w-0">
+                      <div className={`p-1.5 rounded-lg shrink-0 ${isCompleted ? 'bg-emerald-500/10 text-emerald-400' : 'bg-indigo-500/10 text-indigo-400'}`}>
+                        {isCompleted ? <CheckCircle2 className="w-4 h-4" /> : <File className="w-4 h-4" />}
+                      </div>
+                      <span className="text-xs font-semibold text-zinc-100 truncate">
                         {transfer.file_name}
                       </span>
                     </div>
-                    <span className="font-mono text-zinc-400 shrink-0 font-medium">
-                      {percent}%
-                    </span>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs font-mono font-bold text-white bg-indigo-600/30 px-2 py-0.5 rounded-md border border-indigo-500/30">
+                        {percent}%
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="w-full h-1.5 rounded-full bg-[#272727] overflow-hidden">
+                  {/* Animated glowing progress bar */}
+                  <div className="w-full h-2.5 rounded-full bg-[#121212] overflow-hidden p-0.5 border border-[#272727]">
                     <div
-                      className={`h-full transition-all duration-200 ${
-                        transfer.status === 'completed'
-                          ? 'bg-emerald-500'
-                          : transfer.status === 'failed'
+                      className={`h-full rounded-full transition-all duration-200 ${
+                        isCompleted
+                          ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-sm shadow-emerald-500/50'
+                          : isFailed
                           ? 'bg-rose-500'
-                          : 'bg-indigo-500'
+                          : 'bg-gradient-to-r from-indigo-500 via-violet-500 to-emerald-400 animate-pulse'
                       }`}
                       style={{ width: `${percent}%` }}
                     />
                   </div>
 
-                  <div className="mt-2 flex items-center justify-between text-[11px] font-mono text-zinc-500">
-                    <span>{formatBytes(transfer.bytes_transferred)} of {formatBytes(transfer.total_bytes)}</span>
-                    <span className="capitalize">{transfer.status}</span>
+                  <div className="flex items-center justify-between text-[11px] font-mono text-zinc-400">
+                    <span>
+                      {formatBytes(transfer.bytes_transferred)} / {formatBytes(transfer.total_bytes)}
+                    </span>
+                    <span className="flex items-center gap-1 font-sans font-medium">
+                      {isCompleted ? (
+                        <span className="text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Transfer Complete
+                        </span>
+                      ) : isFailed ? (
+                        <span className="text-rose-400 flex items-center gap-1">
+                          <AlertCircle className="w-3.5 h-3.5" /> Transfer Failed
+                        </span>
+                      ) : (
+                        <span className="text-indigo-400 flex items-center gap-1">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Transferring via Wi-Fi...
+                        </span>
+                      )}
+                    </span>
                   </div>
                 </div>
               );
@@ -314,28 +381,86 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
         </div>
       )}
 
+      {/* Main Drop & Action Area */}
+      <div className="flex-1 flex flex-col justify-center mb-6">
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={() => handleSelectFiles('all')}
+          className={`relative flex flex-col items-center justify-center p-6 sm:p-8 rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer ${
+            isDragging
+              ? 'border-indigo-500 bg-indigo-500/10 scale-[1.01]'
+              : 'border-[#272727] bg-[#181818]/60 hover:bg-[#181818] hover:border-[#353535]'
+          }`}
+        >
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center shadow-inner mb-3 transition-transform hover:scale-105">
+            <UploadCloud className="w-7 h-7 sm:w-8 sm:h-8" />
+          </div>
+
+          <h3 className="text-base sm:text-lg font-bold text-zinc-100 text-center">
+            {isDragging ? 'Release to Send Files' : 'Drop Files Here or Tap to Browse'}
+          </h3>
+          <p className="mt-1 text-xs text-zinc-400 text-center max-w-xs">
+            {pairedPeers.length > 0
+              ? `Streams directly to ${activePeer?.name || 'paired peer'} over high-speed Wi-Fi`
+              : 'Connect your phone or PC to start transferring files'}
+          </p>
+
+          {/* Quick Selection Buttons on Mobile */}
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSelectFiles('all');
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md active:scale-95 transition-all"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Browse Files</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSelectFiles('media');
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#272727] hover:bg-[#323232] text-zinc-200 active:scale-95 transition-all"
+            >
+              <Image className="w-4 h-4 text-emerald-400" />
+              <span>Photos & Videos</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Received Files History */}
       {receivedFiles.length > 0 && (
-        <div className="mt-8">
-          <h2 className="text-sm font-semibold text-zinc-200 uppercase tracking-wider mb-3">
-            Recently Received
-          </h2>
-          <div className="flex flex-col gap-2.5">
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+              Received Files ({receivedFiles.length})
+            </h2>
+          </div>
+
+          <div className="flex flex-col gap-2">
             {receivedFiles.map((item) => (
               <div
                 key={item.transfer_id}
-                className="p-3.5 rounded-xl bg-[#181818] border border-[#272727] flex items-center justify-between hover:border-[#313131] transition-all"
+                className="p-3 rounded-xl bg-[#181818] border border-[#272727] flex items-center justify-between hover:border-[#353535] transition-all"
               >
-                <div className="flex items-center gap-3 truncate pr-3">
+                <div className="flex items-center gap-3 truncate pr-2 min-w-0">
                   <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0">
                     <FileCheck2 className="w-4 h-4" />
                   </div>
-                  <div className="truncate">
-                    <div className="text-sm font-semibold text-zinc-200 truncate">
+                  <div className="truncate min-w-0">
+                    <div className="text-xs sm:text-sm font-semibold text-zinc-100 truncate">
                       {item.file_name}
                     </div>
-                    <div className="text-[11px] font-mono text-zinc-500">
-                      {formatBytes(item.bytes)} • {item.sender_name ? `From ${item.sender_name}` : 'Ready to save'}
+                    <div className="text-[11px] font-mono text-zinc-400">
+                      {formatBytes(item.bytes)} {item.sender_name ? `• From ${item.sender_name}` : ''}
                     </div>
                   </div>
                 </div>
@@ -344,7 +469,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
                   <a
                     href={item.download_url}
                     download={item.file_name}
-                    className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-all active:scale-[0.98] shrink-0"
+                    className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all active:scale-95 shrink-0 shadow-sm"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Download</span>
@@ -352,7 +477,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
                 ) : (
                   <button
                     onClick={() => handleOpenFolder(item.path)}
-                    className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium bg-[#272727] hover:bg-[#313131] text-zinc-300 hover:text-white transition-colors active:scale-[0.98] shrink-0"
+                    className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-medium bg-[#272727] hover:bg-[#323232] text-zinc-300 hover:text-white transition-colors active:scale-95 shrink-0"
                   >
                     <FolderOpen className="w-3.5 h-3.5" />
                     <span>Open</span>

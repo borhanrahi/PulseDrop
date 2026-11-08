@@ -52,20 +52,20 @@ export const PeerRadar: React.FC<PeerRadarProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-y-auto p-4 md:p-8 select-none max-w-4xl mx-auto w-full">
-      {/* Header section with gradient heading per ai-design-skills */}
-      <div className="flex items-center justify-between pb-6 border-b border-[#272727]">
+    <div className="flex-1 flex flex-col h-full overflow-y-auto p-3.5 sm:p-5 md:p-8 select-none max-w-4xl mx-auto w-full">
+      {/* Header section with gradient heading */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 sm:pb-6 border-b border-[#272727]">
         <div>
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight bg-gradient-to-r from-white to-[#9B9B9B] bg-clip-text text-transparent">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight bg-gradient-to-r from-white to-[#9B9B9B] bg-clip-text text-transparent">
             Nearby Radar
           </h1>
-          <p className="mt-1 text-sm text-zinc-400">
+          <p className="mt-1 text-xs sm:text-sm text-zinc-400">
             Real time peer discovery across local Wi-Fi and mobile hotspots
           </p>
         </div>
         <button
           onClick={onOpenPairModal}
-          className="flex items-center gap-2 py-2 px-3.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all active:scale-[0.98]"
+          className="flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 transition-all active:scale-[0.98] self-start sm:self-auto shrink-0"
         >
           <QrCode className="w-4 h-4" />
           <span>Pair with QR</span>

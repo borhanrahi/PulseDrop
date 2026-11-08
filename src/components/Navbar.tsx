@@ -163,58 +163,96 @@ export const Navbar: React.FC<NavbarProps> = ({
       </aside>
 
       {/* Mobile Top Header (< md) */}
-      <header className="flex md:hidden items-center justify-between px-4 py-3 bg-[#181818] border-b border-[#272727] select-none shrink-0">
+      <header className="flex md:hidden items-center justify-between px-4 py-3 bg-[#181818] border-b border-[#272727] select-none shrink-0 w-full z-20">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white">
-            <Radio className="w-4 h-4 text-white" />
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20">
+            <Radio className="w-4 h-4 text-white animate-pulse" />
           </div>
-          <span className="text-sm font-bold text-white">PulseDrop</span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#1f1f1f] text-zinc-300 font-mono">
-            {pairedCount} paired
-          </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-white tracking-tight">PulseDrop</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                Online
+              </span>
+            </div>
+            <div className="text-[10px] font-mono text-zinc-400 truncate max-w-[170px]">
+              {localDevice?.name || 'Local'} • {localDevice?.ip || '127.0.0.1'}
+            </div>
+          </div>
         </div>
 
-        <button
-          onClick={onOpenPairModal}
-          className="p-1.5 rounded-lg bg-[#272727] text-zinc-200 hover:text-white"
-        >
-          <QrCode className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {pairedCount > 0 ? (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>{pairedCount} Paired</span>
+            </div>
+          ) : (
+            <button
+              onClick={onOpenPairModal}
+              className="flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition-all active:scale-95"
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span>Pair</span>
+            </button>
+          )}
+
+          <button
+            onClick={onOpenPairModal}
+            title="Show Pairing QR"
+            className="p-1.5 rounded-lg bg-[#272727] text-zinc-300 hover:text-white"
+          >
+            <QrCode className="w-4 h-4" />
+          </button>
+        </div>
       </header>
 
       {/* Mobile Bottom Navigation Bar (< md) */}
-      <nav className="flex md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#181818]/95 backdrop-blur-md border-t border-[#272727] items-center justify-around px-2 z-30 select-none">
+      <nav className="flex md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#181818]/95 backdrop-blur-md border-t border-[#272727] items-center justify-around px-3 z-40 select-none">
         <button
           onClick={() => setCurrentTab('drop')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-colors ${
-            currentTab === 'drop' ? 'text-indigo-400 font-semibold' : 'text-zinc-400'
+          className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all ${
+            currentTab === 'drop'
+              ? 'text-indigo-400 font-semibold'
+              : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          <Files className="w-5 h-5" />
-          <span className="text-[11px]">Drop</span>
+          <div className={`p-1 rounded-lg ${currentTab === 'drop' ? 'bg-indigo-500/15' : ''}`}>
+            <Files className="w-5 h-5" />
+          </div>
+          <span className="text-[10px] mt-0.5">Drop</span>
         </button>
 
         <button
           onClick={() => setCurrentTab('radar')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-colors relative ${
-            currentTab === 'radar' ? 'text-indigo-400 font-semibold' : 'text-zinc-400'
+          className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all relative ${
+            currentTab === 'radar'
+              ? 'text-indigo-400 font-semibold'
+              : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          <Radio className="w-5 h-5" />
-          <span className="text-[11px]">Radar</span>
-          {pairedCount > 0 && (
-            <span className="absolute top-1 right-2 w-2 h-2 rounded-full bg-indigo-500" />
-          )}
+          <div className={`p-1 rounded-lg relative ${currentTab === 'radar' ? 'bg-indigo-500/15' : ''}`}>
+            <Radio className="w-5 h-5" />
+            {pairedCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400" />
+            )}
+          </div>
+          <span className="text-[10px] mt-0.5">Radar</span>
         </button>
 
         <button
           onClick={() => setCurrentTab('clipboard')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-colors ${
-            currentTab === 'clipboard' ? 'text-indigo-400 font-semibold' : 'text-zinc-400'
+          className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all ${
+            currentTab === 'clipboard'
+              ? 'text-indigo-400 font-semibold'
+              : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
-          <ClipboardCopy className="w-5 h-5" />
-          <span className="text-[11px]">Clipboard</span>
+          <div className={`p-1 rounded-lg ${currentTab === 'clipboard' ? 'bg-indigo-500/15' : ''}`}>
+            <ClipboardCopy className="w-5 h-5" />
+          </div>
+          <span className="text-[10px] mt-0.5">Clipboard</span>
         </button>
       </nav>
     </>

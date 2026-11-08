@@ -72,7 +72,7 @@ export const ClipboardFeed: React.FC<ClipboardFeedProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-y-auto p-4 md:p-8 select-none max-w-4xl mx-auto w-full">
+    <div className="flex-1 flex flex-col h-full overflow-y-auto p-3.5 sm:p-5 md:p-8 select-none max-w-4xl mx-auto w-full">
       {/* Header section with gradient per ai-design-skills */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-[#272727]">
         <div>

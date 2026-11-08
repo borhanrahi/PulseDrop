@@ -41,8 +41,8 @@ export function App() {
   }, [isPairModalOpen]);
 
   return (
-    <div className="flex h-screen w-screen bg-[#121212] text-zinc-100 overflow-hidden font-sans">
-      {/* Navigation (Sidebar on Desktop, Bottom bar on Mobile) */}
+    <div className="flex flex-col md:flex-row h-screen h-[100dvh] w-screen bg-[#121212] text-zinc-100 overflow-hidden font-sans">
+      {/* Navigation (Sidebar on Desktop, Header + Bottom bar on Mobile) */}
       <Navbar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
@@ -54,7 +54,7 @@ export function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden pb-16 md:pb-0 relative">
+      <main className="flex-1 flex flex-col h-full overflow-hidden pb-16 md:pb-0 relative min-w-0 w-full">
         {currentTab === 'drop' && (
           <FileDropZone
             pairedPeers={pairedPeers}

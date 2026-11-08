@@ -118,9 +118,9 @@ export const PairModal: React.FC<PairModalProps> = ({
   const isMobile = localDevice?.os === 'android' || localDevice?.os === 'ios';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div 
-        className="w-full max-w-md bg-[#181818] border border-[#272727] rounded-2xl shadow-2xl p-6 text-zinc-100 relative overflow-hidden"
+        className="w-full max-w-md bg-[#181818] border border-[#272727] rounded-2xl shadow-2xl p-4 sm:p-6 text-zinc-100 relative overflow-hidden max-h-[92dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
