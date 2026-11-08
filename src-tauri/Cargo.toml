@@ -1,0 +1,46 @@
+[package]
+name = "pulsedrop"
+version = "0.1.0"
+description = "PulseDrop — Cross-Platform Local File Drop & Live Clipboard Sync"
+authors = ["PulseDrop"]
+edition = "2021"
+
+[lib]
+name = "pulsedrop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-os = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+axum = { version = "0.8", features = ["ws", "multipart"] }
+reqwest = { version = "0.12", features = ["stream", "json"] }
+local-ip-address = "0.6"
+mdns-sd = "0.13"
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+futures-util = "0.3"
+tokio-tungstenite = "0.26"
+
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
+tauri-plugin-haptics = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
