@@ -137,19 +137,34 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK
+      - name: Setup Android SDK & NDK
         run: |
-          ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
-          echo "NDK_HOME=${ANDROID_HOME}/ndk/26.1.10909125" >> $GITHUB_ENV
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+
+          # Accept all SDK licenses automatically
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+          # Detect or install NDK
+          NDK_PATH=$(find $ANDROID_HOME/ndk -maxdepth 1 -mindepth 1 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$NDK_PATH" ]; then
+            yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125"
+            NDK_PATH="$ANDROID_HOME/ndk/26.1.10909125"
+          fi
+          echo "NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "Using Android NDK: $NDK_PATH"
 
       - name: Install frontend dependencies
         run: npm ci
 
       - name: Bump Version to ${{ needs.create-release.outputs.version }}
         run: node ./scripts/bump-version.cjs ${{ needs.create-release.outputs.version }}
+
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x src-tauri/gen/android/gradlew
 
       - name: Build frontend
         run: npm run build
@@ -159,14 +174,17 @@ jobs:
           npx tauri android build --apk
         env:
           NDK_HOME: ${{ env.NDK_HOME }}
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
 
       - name: Prepare APK for Release
         run: |
           mkdir -p release-apk
           find src-tauri/gen/android/app/build/outputs/apk -type f -name "*.apk" | while read -r apk; do
+            echo "Found APK: $apk"
             fname=$(basename "$apk")
             cp "$apk" "release-apk/PulseDrop-${{ needs.create-release.outputs.tag_name }}-${fname}"
           done
+          ls -la release-apk/
 
       - name: Upload APK to GitHub Release
         uses: softprops/action-gh-release@v2

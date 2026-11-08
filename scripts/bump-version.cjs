@@ -43,3 +43,4 @@ if (fs.existsSync(androidPropPath)) {
   props = props.replace(/^tauri\.android\.versionName=.*$/m, `tauri.android.versionName=${version}`);
   fs.writeFileSync(androidPropPath, props);
 }
+
