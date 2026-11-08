@@ -9,6 +9,7 @@ import { usePulseEvents } from './hooks/usePulseEvents';
 export function App() {
   const [currentTab, setCurrentTab] = useState<'drop' | 'radar' | 'clipboard' | 'settings'>('drop');
   const [isPairModalOpen, setIsPairModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const {
     localDevice,
@@ -18,15 +19,28 @@ export function App() {
     activeTransfers,
     receivedFiles,
     clipboardSyncEnabled,
+    networkInterfaces,
+    lastPairedPeer,
+    lastPairedPeerTimestamp,
     toggleSync,
     disconnectPeer,
     pairWithQr,
     pairWithNearby,
     pairWithIpAddress,
-    networkInterfaces,
     sendClipboardText,
     sendFiles,
   } = usePulseEvents();
+
+  // Show a notification banner when a device is paired
+  useEffect(() => {
+    if (lastPairedPeer && lastPairedPeerTimestamp) {
+      setToastMessage(`Successfully connected with ${lastPairedPeer.name}!`);
+      const timer = setTimeout(() => {
+        setToastMessage(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [lastPairedPeer, lastPairedPeerTimestamp]);
 
   // Keyboard shortcut: Ctrl+K or Escape
   useEffect(() => {
@@ -91,6 +105,14 @@ export function App() {
         )}
       </main>
 
+      {/* Floating Global Connection Toast Banner */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-emerald-950/95 border border-emerald-500/40 text-emerald-200 text-xs sm:text-sm font-semibold shadow-2xl backdrop-blur-md animate-in slide-in-from-top-3 duration-300">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Pairing Modal */}
       <PairModal
         isOpen={isPairModalOpen}
@@ -99,6 +121,8 @@ export function App() {
         networkInterfaces={networkInterfaces}
         onPairWithPayload={pairWithQr}
         onPairWithIpAddress={pairWithIpAddress}
+        lastPairedPeer={lastPairedPeer}
+        lastPairedPeerTimestamp={lastPairedPeerTimestamp}
       />
     </div>
   );

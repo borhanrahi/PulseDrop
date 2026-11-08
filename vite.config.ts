@@ -184,6 +184,22 @@ function localRelayPlugin(): Plugin {
                     peer: data.sender,
                   })
                 );
+                // Also notify the sender (e.g. mobile scanner) that it successfully paired with the target
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(
+                    JSON.stringify({
+                      type: "peer-paired",
+                      peer: {
+                        id: target.id,
+                        name: target.name,
+                        os: target.os,
+                        ip: target.ip,
+                        port: target.port,
+                        token: target.token,
+                      },
+                    })
+                  );
+                }
               }
             }
           } catch (err) {

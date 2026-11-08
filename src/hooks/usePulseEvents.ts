@@ -55,6 +55,8 @@ export function usePulseEvents() {
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [networkUrl, setNetworkUrl] = useState<string>('');
   const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterfaceInfo[]>([]);
+  const [lastPairedPeer, setLastPairedPeer] = useState<DeviceInfo | null>(null);
+  const [lastPairedPeerTimestamp, setLastPairedPeerTimestamp] = useState<number>(0);
 
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -152,20 +154,20 @@ export function usePulseEvents() {
             })
           );
           // Add to paired peers immediately
+          const targetPeer: DeviceInfo = {
+            id: pairId,
+            name: pairName ? decodeURIComponent(pairName) : 'Remote Peer',
+            os: 'unknown',
+            ip: window.location.hostname || '127.0.0.1',
+            port: parseInt(window.location.port, 10) || 1420,
+            token: 'paired-token',
+          };
           setPairedPeers((prev) => {
             if (prev.some((p) => p.id === pairId)) return prev;
-            return [
-              ...prev,
-              {
-                id: pairId,
-                name: pairName ? decodeURIComponent(pairName) : 'Remote Peer',
-                os: 'unknown',
-                ip: '',
-                port: 1420,
-                token: 'paired-token',
-              },
-            ];
+            return [...prev, targetPeer];
           });
+          setLastPairedPeer(targetPeer);
+          setLastPairedPeerTimestamp(Date.now());
         }
       };
 
@@ -195,6 +197,8 @@ export function usePulseEvents() {
               if (prev.some((p) => p.id === peer.id)) return prev;
               return [...prev, peer];
             });
+            setLastPairedPeer(peer);
+            setLastPairedPeerTimestamp(Date.now());
           } else if (msg.type === 'clipboard-sync') {
             const item: ClipboardItem = {
               id: 'recv-' + Date.now(),
@@ -377,6 +381,8 @@ export function usePulseEvents() {
         payloadJson: qrPayloadString,
       });
       setPairedPeers((prev) => [...prev.filter((p) => p.id !== peer.id), peer]);
+      setLastPairedPeer(peer);
+      setLastPairedPeerTimestamp(Date.now());
       return peer;
     } else {
       let peer: DeviceInfo;
@@ -397,6 +403,8 @@ export function usePulseEvents() {
         };
       }
       setPairedPeers((prev) => [...prev.filter((p) => p.id !== peer.id), peer]);
+      setLastPairedPeer(peer);
+      setLastPairedPeerTimestamp(Date.now());
       return peer;
     }
   };
@@ -410,10 +418,14 @@ export function usePulseEvents() {
       });
       setPairedPeers((prev) => [...prev.filter((p) => p.id !== connected.id), connected]);
       setNearbyPeers((prev) => prev.filter((p) => p.id !== peer.id));
+      setLastPairedPeer(connected);
+      setLastPairedPeerTimestamp(Date.now());
       return connected;
     } else {
       setPairedPeers((prev) => [...prev.filter((p) => p.id !== peer.id), peer]);
       setNearbyPeers((prev) => prev.filter((p) => p.id !== peer.id));
+      setLastPairedPeer(peer);
+      setLastPairedPeerTimestamp(Date.now());
       return peer;
     }
   };
@@ -461,6 +473,8 @@ export function usePulseEvents() {
       if (prev.some((p) => p.id === targetPeer.id || p.ip === targetPeer.ip)) return prev;
       return [...prev, targetPeer];
     });
+    setLastPairedPeer(targetPeer);
+    setLastPairedPeerTimestamp(Date.now());
 
     return targetPeer;
   };
@@ -612,6 +626,8 @@ export function usePulseEvents() {
     isInitialized,
     networkUrl,
     networkInterfaces,
+    lastPairedPeer,
+    lastPairedPeerTimestamp,
     toggleSync,
     disconnectPeer,
     pairWithQr,

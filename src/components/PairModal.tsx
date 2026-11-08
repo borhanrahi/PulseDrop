@@ -23,6 +23,8 @@ interface PairModalProps {
   networkInterfaces?: NetworkInterfaceInfo[];
   onPairWithPayload: (payload: string) => Promise<DeviceInfo>;
   onPairWithIpAddress?: (ip: string) => Promise<DeviceInfo>;
+  lastPairedPeer?: DeviceInfo | null;
+  lastPairedPeerTimestamp?: number;
 }
 
 export const PairModal: React.FC<PairModalProps> = ({
@@ -32,6 +34,8 @@ export const PairModal: React.FC<PairModalProps> = ({
   networkInterfaces = [],
   onPairWithPayload,
   onPairWithIpAddress,
+  lastPairedPeer,
+  lastPairedPeerTimestamp,
 }) => {
   const [copied, setCopied] = useState(false);
   const [pastePayload, setPastePayload] = useState('');
@@ -39,6 +43,32 @@ export const PairModal: React.FC<PairModalProps> = ({
   const [isPairing, setIsPairing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pairingSuccess, setPairingSuccess] = useState<DeviceInfo | null>(null);
+  const [modalOpenedAt, setModalOpenedAt] = useState<number>(() => Date.now());
+
+  // Reset states when modal opens
+  React.useEffect(() => {
+    if (isOpen) {
+      setModalOpenedAt(Date.now());
+      setPairingSuccess(null);
+      setErrorMsg(null);
+    }
+  }, [isOpen]);
+
+  // Auto-close modal when another device scans our QR code
+  React.useEffect(() => {
+    if (
+      isOpen &&
+      lastPairedPeer &&
+      lastPairedPeerTimestamp &&
+      lastPairedPeerTimestamp >= modalOpenedAt
+    ) {
+      setPairingSuccess(lastPairedPeer);
+      const timer = setTimeout(() => {
+        onClose();
+      }, 1800);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, lastPairedPeer, lastPairedPeerTimestamp, modalOpenedAt, onClose]);
 
   // If user selects an interface (e.g. Ethernet vs Wi-Fi)
   const [selectedIfaceIp, setSelectedIfaceIp] = useState<string>('');
@@ -58,21 +88,7 @@ export const PairModal: React.FC<PairModalProps> = ({
 
   const webMobileUrl = `http://${activeHostIp}:${activePort}/?pair=${localDevice?.id || ''}&name=${encodeURIComponent(localDevice?.name || 'Local Peer')}`;
 
-  const qrPayloadString = isTauri()
-    ? localDevice
-      ? JSON.stringify({
-          v: 1,
-          id: localDevice.id,
-          name: localDevice.name,
-          os: localDevice.os,
-          ip: activeHostIp,
-          port: activePort,
-          token: localDevice.token,
-        })
-      : ''
-    : webMobileUrl;
-
-  const handleCopyLinkOrPayload = () => {
+  const handleCopy = () => {
     const textToCopy = isTauri()
       ? (localDevice ? JSON.stringify({
           v: 1,
@@ -99,7 +115,6 @@ export const PairModal: React.FC<PairModalProps> = ({
       const peer = await onPairWithPayload(pastePayload.trim());
       setPairingSuccess(peer);
       setTimeout(() => {
-        setPairingSuccess(null);
         onClose();
       }, 1500);
     } catch (e: any) {
@@ -118,7 +133,6 @@ export const PairModal: React.FC<PairModalProps> = ({
         const peer = await onPairWithIpAddress(directIp.trim());
         setPairingSuccess(peer);
         setTimeout(() => {
-          setPairingSuccess(null);
           onClose();
         }, 1500);
       } else {
@@ -180,180 +194,193 @@ export const PairModal: React.FC<PairModalProps> = ({
           </button>
         </div>
 
-        {/* Success banner */}
-        {pairingSuccess && (
-          <div className="mt-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
-            <Check className="w-4 h-4 shrink-0" />
-            <span>Connected to {pairingSuccess.name} ({pairingSuccess.ip})</span>
-          </div>
-        )}
-
-        {/* Multi-Network Interface Selector (Ethernet / Wi-Fi) */}
-        {networkInterfaces.length > 1 && (
-          <div className="mt-3 p-2.5 rounded-xl bg-[#202020] border border-[#2d2d2d]">
-            <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1.5 font-medium">
-              <span>Select Network to Broadcast:</span>
-              <span className="text-indigo-400 font-mono text-[10px]">Universal LAN</span>
+        {/* Success Overlay when QR Code is scanned or paired */}
+        {pairingSuccess ? (
+          <div className="py-8 px-4 flex flex-col items-center justify-center text-center animate-in zoom-in-95 duration-200">
+            <div className="relative flex items-center justify-center w-20 h-20 rounded-3xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 mb-4 shadow-xl shadow-emerald-500/20">
+              <Check className="w-10 h-10 animate-in zoom-in duration-300" />
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 animate-ping" />
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400" />
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {networkInterfaces.map((iface) => {
-                const isSelected = activeHostIp === iface.ip;
-                return (
-                  <button
-                    key={iface.ip}
-                    type="button"
-                    onClick={() => setSelectedIfaceIp(iface.ip)}
-                    className={`flex items-center gap-2 p-2 rounded-lg text-left text-xs transition-all ${
-                      isSelected
-                        ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/40 font-semibold'
-                        : 'bg-[#181818] text-zinc-400 hover:text-zinc-200 border border-transparent'
-                    }`}
-                  >
-                    {iface.type === 'wifi' ? (
-                      <Wifi className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-                    ) : (
-                      <Network className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
-                    )}
-                    <div className="truncate">
-                      <div className="truncate text-[11px]">{iface.name}</div>
-                      <div className="font-mono text-[10px] text-zinc-400">{iface.ip}</div>
-                    </div>
-                  </button>
-                );
-              })}
+
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-2">
+              QR Code Scanned
+            </span>
+
+            <h3 className="text-xl font-bold text-white">Successfully Connected!</h3>
+            <p className="mt-2 text-sm text-zinc-300 max-w-xs">
+              Connected with <span className="font-semibold text-emerald-400">{pairingSuccess.name}</span>
+            </p>
+            <div className="mt-1 font-mono text-xs text-zinc-500">
+              {pairingSuccess.ip ? `${pairingSuccess.ip}:${pairingSuccess.port || 1420}` : 'LAN Peer Mesh'}
             </div>
-          </div>
-        )}
 
-        {/* QR Code Presentation */}
-        <div className="mt-4 flex flex-col items-center">
-          <div className="p-3 bg-white rounded-xl shadow-inner">
-            {qrPayloadString ? (
-              <QRCodeSVG
-                value={qrPayloadString}
-                size={168}
-                level="M"
-                includeMargin={false}
-              />
-            ) : (
-              <div className="w-[168px] h-[168px] bg-zinc-200 animate-pulse rounded" />
-            )}
-          </div>
+            <div className="mt-6 flex items-center gap-2 text-xs text-zinc-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Closing window...</span>
+            </div>
 
-          <div className="mt-3 text-center">
-            {!isTauri() ? (
-              <div className="flex flex-col items-center">
-                <span className="font-mono text-xs px-2.5 py-1 rounded-md bg-[#1f1f1f] text-indigo-400 border border-[#272727] flex items-center gap-1.5 max-w-[320px] truncate">
-                  <Smartphone className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">{webMobileUrl}</span>
-                </span>
-                <p className="mt-1.5 text-xs text-zinc-300 font-medium max-w-[300px]">
-                  Scan with your phone camera to open and pair instantly!
-                </p>
-              </div>
-            ) : (
-              <div>
-                <span className="font-mono text-xs px-2.5 py-1 rounded-md bg-[#1f1f1f] text-zinc-300 border border-[#272727]">
-                  {activeHostIp}:{activePort}
-                </span>
-                <p className="mt-1.5 text-xs text-zinc-400 max-w-[280px]">
-                  Scan with another device to connect over the same local network
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-3 flex items-center gap-2">
             <button
-              onClick={handleCopyLinkOrPayload}
-              className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold bg-[#272727] hover:bg-[#313131] text-zinc-200 hover:text-white border border-transparent transition-all active:scale-[0.98]"
+              onClick={onClose}
+              className="mt-5 py-2 px-6 rounded-xl bg-[#272727] hover:bg-[#313131] text-zinc-200 text-xs font-semibold transition-all active:scale-95"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Copied Link' : 'Copy Mobile Link'}</span>
+              Done
             </button>
-
-            {!isTauri() && (
-              <a
-                href={webMobileUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 transition-all active:scale-[0.98]"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Test Link</span>
-              </a>
+          </div>
+        ) : (
+          <>
+            {/* Multi-Network Interface Selector (Ethernet / Wi-Fi) */}
+            {networkInterfaces.length > 1 && (
+              <div className="mt-3 p-2.5 rounded-xl bg-[#202020] border border-[#2d2d2d]">
+                <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1.5 font-medium">
+                  <span>Select Network to Broadcast:</span>
+                  <span className="text-indigo-400 font-mono text-[10px]">Universal LAN</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {networkInterfaces.map((iface) => {
+                    const isSelected = activeHostIp === iface.ip;
+                    return (
+                      <button
+                        key={iface.ip}
+                        type="button"
+                        onClick={() => setSelectedIfaceIp(iface.ip)}
+                        className={`flex items-center gap-2 p-2 rounded-lg text-left text-xs transition-all ${
+                          isSelected
+                            ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/40 font-semibold'
+                            : 'bg-[#181818] text-zinc-400 hover:text-zinc-200 border border-transparent'
+                        }`}
+                      >
+                        {iface.type === 'wifi' ? (
+                          <Wifi className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                        ) : (
+                          <Network className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
+                        )}
+                        <div className="truncate">
+                          <div className="truncate text-[11px]">{iface.name}</div>
+                          <div className="font-mono text-[10px] text-zinc-400">{iface.ip}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
-            {isTauri() && isMobile && (
+            {/* QR Code Container */}
+            <div className="mt-4 flex flex-col items-center">
+              <div className="p-3.5 bg-white rounded-2xl shadow-xl border border-zinc-200/20">
+                <QRCodeSVG
+                  value={webMobileUrl}
+                  size={190}
+                  level="M"
+                  includeMargin={false}
+                />
+              </div>
+
+              {/* Mobile Clickable URL Box */}
+              <div className="mt-3 w-full bg-[#1e1e1e] border border-[#2a2a2a] rounded-xl p-2.5 flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] text-zinc-500 uppercase font-semibold">Web Pairing URL</div>
+                  <div className="text-xs text-indigo-300 font-mono truncate">{webMobileUrl}</div>
+                </div>
+                <a
+                  href={webMobileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 transition-colors shrink-0"
+                  title="Open URL in new tab"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+
+              <div className="mt-2.5 flex items-center justify-center gap-1.5 text-xs text-zinc-400">
+                <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Scan with your phone's normal camera app</span>
+              </div>
+            </div>
+
+            {/* Action Buttons: Copy / Scanner */}
+            <div className="mt-4 flex gap-2">
               <button
-                onClick={handleMobileScan}
-                className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-all active:scale-[0.98]"
+                onClick={handleCopy}
+                className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold bg-[#272727] hover:bg-[#313131] text-zinc-200 hover:text-white transition-all active:scale-[0.98]"
               >
-                <Camera className="w-3.5 h-3.5" />
-                <span>Scan Camera</span>
+                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copied ? 'Copied URL!' : 'Copy Pairing Link'}</span>
               </button>
-            )}
-          </div>
-        </div>
 
-        {/* Direct IP Connect (Universal Office Network Pairing) */}
-        <div className="mt-4 pt-3.5 border-t border-[#272727]">
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <Globe className="w-3.5 h-3.5 text-emerald-400" />
-            <label className="text-xs font-semibold text-zinc-200">
-              Direct IP Connect (Ethernet / Cross-Subnet)
-            </label>
-          </div>
-          <p className="text-[11px] text-zinc-400 mb-2">
-            Connect to any coworker on the office network by typing their IP:
-          </p>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="e.g. 10.200.11.91 or 192.168.1.50"
-              value={directIp}
-              onChange={(e) => setDirectIp(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleDirectIpConnect()}
-              className="flex-1 bg-[#1f1f1f] border border-[#272727] rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
-            />
-            <button
-              onClick={handleDirectIpConnect}
-              disabled={isPairing || !directIp.trim()}
-              className="py-1.5 px-3.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] shrink-0"
-            >
-              {isPairing ? 'Connecting...' : 'Connect'}
-            </button>
-          </div>
-        </div>
-
-        {/* Manual Pairing Fallback */}
-        <div className="mt-3.5 pt-3 border-t border-[#272727]">
-          <label className="block text-xs font-semibold text-zinc-300 mb-1.5">
-            Manual Token / Link Input
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Paste full URL or token string..."
-              value={pastePayload}
-              onChange={(e) => setPastePayload(e.target.value)}
-              className="flex-1 bg-[#1f1f1f] border border-[#272727] rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
-            />
-            <button
-              onClick={handleManualPair}
-              disabled={isPairing || !pastePayload.trim()}
-              className="py-1.5 px-3.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] shrink-0"
-            >
-              {isPairing ? 'Pairing...' : 'Pair'}
-            </button>
-          </div>
-          {errorMsg && (
-            <div className="mt-2 text-xs text-rose-400 flex items-center gap-1.5">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>{errorMsg}</span>
+              {isTauri() && isMobile && (
+                <button
+                  onClick={handleMobileScan}
+                  className="flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-all active:scale-[0.98]"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Scan QR</span>
+                </button>
+              )}
             </div>
-          )}
-        </div>
+
+            {/* Direct IP Connect (Universal LAN / Ethernet / Mixed Wifi) */}
+            <div className="mt-4 pt-3.5 border-t border-[#272727]">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                <label className="text-xs font-semibold text-zinc-200">
+                  Direct IP Connect (Ethernet / Cross-Subnet)
+                </label>
+              </div>
+              <p className="text-[11px] text-zinc-400 mb-2">
+                Connect to any coworker on the office network by typing their IP:
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. 10.200.11.91 or 192.168.1.50"
+                  value={directIp}
+                  onChange={(e) => setDirectIp(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleDirectIpConnect()}
+                  className="flex-1 bg-[#1f1f1f] border border-[#272727] rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
+                />
+                <button
+                  onClick={handleDirectIpConnect}
+                  disabled={isPairing || !directIp.trim()}
+                  className="py-1.5 px-3.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] shrink-0"
+                >
+                  {isPairing ? 'Connecting...' : 'Connect'}
+                </button>
+              </div>
+            </div>
+
+            {/* Manual Pairing Fallback */}
+            <div className="mt-3.5 pt-3 border-t border-[#272727]">
+              <label className="block text-xs font-semibold text-zinc-300 mb-1.5">
+                Manual Token / Link Input
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Paste full URL or token string..."
+                  value={pastePayload}
+                  onChange={(e) => setPastePayload(e.target.value)}
+                  className="flex-1 bg-[#1f1f1f] border border-[#272727] rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
+                />
+                <button
+                  onClick={handleManualPair}
+                  disabled={isPairing || !pastePayload.trim()}
+                  className="py-1.5 px-3.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] shrink-0"
+                >
+                  {isPairing ? 'Pairing...' : 'Pair'}
+                </button>
+              </div>
+              {errorMsg && (
+                <div className="mt-2 text-xs text-rose-400 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
