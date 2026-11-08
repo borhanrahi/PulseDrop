@@ -22,6 +22,8 @@ export function App() {
     disconnectPeer,
     pairWithQr,
     pairWithNearby,
+    pairWithIpAddress,
+    networkInterfaces,
     sendClipboardText,
     sendFiles,
   } = usePulseEvents();
@@ -70,8 +72,10 @@ export function App() {
             pairedPeers={pairedPeers}
             nearbyPeers={nearbyPeers}
             localDevice={localDevice}
+            networkInterfaces={networkInterfaces}
             onDisconnect={disconnectPeer}
             onPairNearby={pairWithNearby}
+            onPairWithIpAddress={pairWithIpAddress}
             onOpenPairModal={() => setIsPairModalOpen(true)}
           />
         )}
@@ -92,7 +96,9 @@ export function App() {
         isOpen={isPairModalOpen}
         onClose={() => setIsPairModalOpen(false)}
         localDevice={localDevice}
+        networkInterfaces={networkInterfaces}
         onPairWithPayload={pairWithQr}
+        onPairWithIpAddress={pairWithIpAddress}
       />
     </div>
   );

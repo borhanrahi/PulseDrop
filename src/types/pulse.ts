@@ -1,3 +1,10 @@
+export interface NetworkInterfaceInfo {
+  name: string;
+  ip: string;
+  type: 'wifi' | 'ethernet' | 'other';
+  url: string;
+}
+
 export interface DeviceInfo {
   id: string;
   name: string;

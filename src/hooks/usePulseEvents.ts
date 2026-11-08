@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { DeviceInfo, TransferProgress, ClipboardItem, ReceivedFile } from '../types/pulse';
+import { DeviceInfo, TransferProgress, ClipboardItem, ReceivedFile, NetworkInterfaceInfo } from '../types/pulse';
 
 // Helper to check if Tauri runtime is present
 export const isTauri = (): boolean => {
@@ -54,6 +54,7 @@ export function usePulseEvents() {
   const [clipboardSyncEnabled, setClipboardSyncEnabled] = useState<boolean>(true);
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [networkUrl, setNetworkUrl] = useState<string>('');
+  const [networkInterfaces, setNetworkInterfaces] = useState<NetworkInterfaceInfo[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -89,6 +90,9 @@ export function usePulseEvents() {
           }
           if (info.url) {
             hostUrl = info.url;
+          }
+          if (Array.isArray(info.interfaces)) {
+            setNetworkInterfaces(info.interfaces);
           }
         }
       } catch (err) {
@@ -414,6 +418,53 @@ export function usePulseEvents() {
     }
   };
 
+  // Direct IP pair: allows connecting across Ethernet, different Wi-Fi, or office subnets
+  const pairWithIpAddress = async (rawInput: string): Promise<DeviceInfo> => {
+    let clean = rawInput.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    let ip = clean;
+    let port = 1420;
+    if (clean.includes(':')) {
+      const parts = clean.split(':');
+      ip = parts[0];
+      port = parseInt(parts[1], 10) || 1420;
+    }
+
+    const targetPeer: DeviceInfo = {
+      id: 'lan-' + ip.replace(/[\.:]/g, '-'),
+      name: `Device (${ip})`,
+      os: 'universal-lan',
+      ip,
+      port,
+      token: 'direct-lan-token',
+    };
+
+    if (isTauri()) {
+      return await pairWithNearby(targetPeer);
+    }
+
+    // Web mode: inform the remote peer on that IP/port
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      await fetch(`http://${ip}:${port}/api/pair-device`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ peer: localDevice }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+    } catch (e) {
+      console.warn('Direct IP pair request sent:', e);
+    }
+
+    setPairedPeers((prev) => {
+      if (prev.some((p) => p.id === targetPeer.id || p.ip === targetPeer.ip)) return prev;
+      return [...prev, targetPeer];
+    });
+
+    return targetPeer;
+  };
+
   // Broadcast custom text across devices in web mode
   const sendClipboardText = async (text: string) => {
     if (!text.trim()) return;
@@ -560,10 +611,12 @@ export function usePulseEvents() {
     clipboardSyncEnabled,
     isInitialized,
     networkUrl,
+    networkInterfaces,
     toggleSync,
     disconnectPeer,
     pairWithQr,
     pairWithNearby,
+    pairWithIpAddress,
     sendClipboardText,
     sendFiles,
     setClipboardFeed,

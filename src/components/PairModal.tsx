@@ -8,41 +8,55 @@ import {
   AlertCircle,
   ShieldCheck,
   Smartphone,
-  ExternalLink
+  ExternalLink,
+  Wifi,
+  Network,
+  Globe
 } from 'lucide-react';
-import { DeviceInfo } from '../types/pulse';
+import { DeviceInfo, NetworkInterfaceInfo } from '../types/pulse';
 import { isTauri } from '../hooks/usePulseEvents';
 
 interface PairModalProps {
   isOpen: boolean;
   onClose: () => void;
   localDevice: DeviceInfo | null;
+  networkInterfaces?: NetworkInterfaceInfo[];
   onPairWithPayload: (payload: string) => Promise<DeviceInfo>;
+  onPairWithIpAddress?: (ip: string) => Promise<DeviceInfo>;
 }
 
 export const PairModal: React.FC<PairModalProps> = ({
   isOpen,
   onClose,
   localDevice,
+  networkInterfaces = [],
   onPairWithPayload,
+  onPairWithIpAddress,
 }) => {
   const [copied, setCopied] = useState(false);
   const [pastePayload, setPastePayload] = useState('');
+  const [directIp, setDirectIp] = useState('');
   const [isPairing, setIsPairing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pairingSuccess, setPairingSuccess] = useState<DeviceInfo | null>(null);
 
+  // If user selects an interface (e.g. Ethernet vs Wi-Fi)
+  const [selectedIfaceIp, setSelectedIfaceIp] = useState<string>('');
+
   if (!isOpen) return null;
 
-  // In web mode, generate a clickable URL with pairing query params
-  const hostIp =
+  // Determine active IP to display and encode
+  const defaultIp =
     localDevice?.ip && localDevice.ip !== '127.0.0.1' && localDevice.ip !== 'localhost'
       ? localDevice.ip
       : window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
       ? window.location.hostname
-      : '127.0.0.1';
+      : networkInterfaces[0]?.ip || '127.0.0.1';
 
-  const webMobileUrl = `http://${hostIp}:${localDevice?.port || 1420}/?pair=${localDevice?.id || ''}&name=${encodeURIComponent(localDevice?.name || 'Desktop PC')}`;
+  const activeHostIp = selectedIfaceIp || defaultIp;
+  const activePort = localDevice?.port || 1420;
+
+  const webMobileUrl = `http://${activeHostIp}:${activePort}/?pair=${localDevice?.id || ''}&name=${encodeURIComponent(localDevice?.name || 'Local Peer')}`;
 
   const qrPayloadString = isTauri()
     ? localDevice
@@ -51,8 +65,8 @@ export const PairModal: React.FC<PairModalProps> = ({
           id: localDevice.id,
           name: localDevice.name,
           os: localDevice.os,
-          ip: localDevice.ip,
-          port: localDevice.port,
+          ip: activeHostIp,
+          port: activePort,
           token: localDevice.token,
         })
       : ''
@@ -65,8 +79,8 @@ export const PairModal: React.FC<PairModalProps> = ({
           id: localDevice.id,
           name: localDevice.name,
           os: localDevice.os,
-          ip: localDevice.ip,
-          port: localDevice.port,
+          ip: activeHostIp,
+          port: activePort,
           token: localDevice.token,
         }) : '')
       : webMobileUrl;
@@ -89,7 +103,29 @@ export const PairModal: React.FC<PairModalProps> = ({
         onClose();
       }, 1500);
     } catch (e: any) {
-      setErrorMsg(e?.toString() || 'Failed to pair with payload. Check LAN connectivity.');
+      setErrorMsg(e?.toString() || 'Failed to pair. Check LAN connectivity.');
+    } finally {
+      setIsPairing(false);
+    }
+  };
+
+  const handleDirectIpConnect = async () => {
+    if (!directIp.trim()) return;
+    setIsPairing(true);
+    setErrorMsg(null);
+    try {
+      if (onPairWithIpAddress) {
+        const peer = await onPairWithIpAddress(directIp.trim());
+        setPairingSuccess(peer);
+        setTimeout(() => {
+          setPairingSuccess(null);
+          onClose();
+        }, 1500);
+      } else {
+        await onPairWithPayload(directIp.trim());
+      }
+    } catch (e: any) {
+      setErrorMsg(e?.toString() || 'Failed to connect via IP address');
     } finally {
       setIsPairing(false);
     }
@@ -132,7 +168,7 @@ export const PairModal: React.FC<PairModalProps> = ({
             <div>
               <h2 className="text-base font-semibold text-white">Instant Pair</h2>
               <p className="text-xs text-zinc-400">
-                {isTauri() ? 'Encrypted peer session' : 'Connect phone camera over local Wi-Fi'}
+                Connect over same Wi-Fi, Ethernet LAN, or office network
               </p>
             </div>
           </div>
@@ -146,45 +182,82 @@ export const PairModal: React.FC<PairModalProps> = ({
 
         {/* Success banner */}
         {pairingSuccess && (
-          <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+          <div className="mt-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
             <Check className="w-4 h-4 shrink-0" />
             <span>Connected to {pairingSuccess.name} ({pairingSuccess.ip})</span>
           </div>
         )}
 
+        {/* Multi-Network Interface Selector (Ethernet / Wi-Fi) */}
+        {networkInterfaces.length > 1 && (
+          <div className="mt-3 p-2.5 rounded-xl bg-[#202020] border border-[#2d2d2d]">
+            <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1.5 font-medium">
+              <span>Select Network to Broadcast:</span>
+              <span className="text-indigo-400 font-mono text-[10px]">Universal LAN</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {networkInterfaces.map((iface) => {
+                const isSelected = activeHostIp === iface.ip;
+                return (
+                  <button
+                    key={iface.ip}
+                    type="button"
+                    onClick={() => setSelectedIfaceIp(iface.ip)}
+                    className={`flex items-center gap-2 p-2 rounded-lg text-left text-xs transition-all ${
+                      isSelected
+                        ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/40 font-semibold'
+                        : 'bg-[#181818] text-zinc-400 hover:text-zinc-200 border border-transparent'
+                    }`}
+                  >
+                    {iface.type === 'wifi' ? (
+                      <Wifi className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                    ) : (
+                      <Network className="w-3.5 h-3.5 shrink-0 text-indigo-400" />
+                    )}
+                    <div className="truncate">
+                      <div className="truncate text-[11px]">{iface.name}</div>
+                      <div className="font-mono text-[10px] text-zinc-400">{iface.ip}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* QR Code Presentation */}
         <div className="mt-4 flex flex-col items-center">
-          <div className="p-3.5 bg-white rounded-xl shadow-inner">
+          <div className="p-3 bg-white rounded-xl shadow-inner">
             {qrPayloadString ? (
               <QRCodeSVG
                 value={qrPayloadString}
-                size={180}
+                size={168}
                 level="M"
                 includeMargin={false}
               />
             ) : (
-              <div className="w-[180px] h-[180px] bg-zinc-200 animate-pulse rounded" />
+              <div className="w-[168px] h-[168px] bg-zinc-200 animate-pulse rounded" />
             )}
           </div>
 
           <div className="mt-3 text-center">
             {!isTauri() ? (
               <div className="flex flex-col items-center">
-                <span className="font-mono text-xs px-2.5 py-1 rounded-md bg-[#1f1f1f] text-indigo-400 border border-[#272727] flex items-center gap-1.5">
-                  <Smartphone className="w-3.5 h-3.5" />
-                  {webMobileUrl}
+                <span className="font-mono text-xs px-2.5 py-1 rounded-md bg-[#1f1f1f] text-indigo-400 border border-[#272727] flex items-center gap-1.5 max-w-[320px] truncate">
+                  <Smartphone className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">{webMobileUrl}</span>
                 </span>
-                <p className="mt-2 text-xs text-zinc-300 font-medium max-w-[300px]">
-                  Point your phone's camera at this QR code to open PulseDrop instantly in your mobile browser!
+                <p className="mt-1.5 text-xs text-zinc-300 font-medium max-w-[300px]">
+                  Scan with your phone camera to open and pair instantly!
                 </p>
               </div>
             ) : (
               <div>
                 <span className="font-mono text-xs px-2.5 py-1 rounded-md bg-[#1f1f1f] text-zinc-300 border border-[#272727]">
-                  {localDevice ? `${localDevice.ip}:${localDevice.port}` : '127.0.0.1'}
+                  {activeHostIp}:{activePort}
                 </span>
-                <p className="mt-2 text-xs text-zinc-400 max-w-[280px]">
-                  Point your phone camera or desktop scanner at this code to drop files instantly
+                <p className="mt-1.5 text-xs text-zinc-400 max-w-[280px]">
+                  Scan with another device to connect over the same local network
                 </p>
               </div>
             )}
@@ -196,7 +269,7 @@ export const PairModal: React.FC<PairModalProps> = ({
               className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold bg-[#272727] hover:bg-[#313131] text-zinc-200 hover:text-white border border-transparent transition-all active:scale-[0.98]"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? 'Copied!' : isTauri() ? 'Copy Payload' : 'Copy Mobile Link'}</span>
+              <span>{copied ? 'Copied Link' : 'Copy Mobile Link'}</span>
             </button>
 
             {!isTauri() && (
@@ -223,15 +296,45 @@ export const PairModal: React.FC<PairModalProps> = ({
           </div>
         </div>
 
+        {/* Direct IP Connect (Universal Office Network Pairing) */}
+        <div className="mt-4 pt-3.5 border-t border-[#272727]">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Globe className="w-3.5 h-3.5 text-emerald-400" />
+            <label className="text-xs font-semibold text-zinc-200">
+              Direct IP Connect (Ethernet / Cross-Subnet)
+            </label>
+          </div>
+          <p className="text-[11px] text-zinc-400 mb-2">
+            Connect to any coworker on the office network by typing their IP:
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="e.g. 10.200.11.91 or 192.168.1.50"
+              value={directIp}
+              onChange={(e) => setDirectIp(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleDirectIpConnect()}
+              className="flex-1 bg-[#1f1f1f] border border-[#272727] rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
+            />
+            <button
+              onClick={handleDirectIpConnect}
+              disabled={isPairing || !directIp.trim()}
+              className="py-1.5 px-3.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] shrink-0"
+            >
+              {isPairing ? 'Connecting...' : 'Connect'}
+            </button>
+          </div>
+        </div>
+
         {/* Manual Pairing Fallback */}
-        <div className="mt-5 pt-4 border-t border-[#272727]">
+        <div className="mt-3.5 pt-3 border-t border-[#272727]">
           <label className="block text-xs font-semibold text-zinc-300 mb-1.5">
-            Manual Pairing Payload or URL
+            Manual Token / Link Input
           </label>
           <div className="flex gap-2">
             <input
               type="text"
-              placeholder="Paste URL or peer token..."
+              placeholder="Paste full URL or token string..."
               value={pastePayload}
               onChange={(e) => setPastePayload(e.target.value)}
               className="flex-1 bg-[#1f1f1f] border border-[#272727] rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
@@ -241,7 +344,7 @@ export const PairModal: React.FC<PairModalProps> = ({
               disabled={isPairing || !pastePayload.trim()}
               className="py-1.5 px-3.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] shrink-0"
             >
-              {isPairing ? 'Pairing...' : 'Connect'}
+              {isPairing ? 'Pairing...' : 'Pair'}
             </button>
           </div>
           {errorMsg && (

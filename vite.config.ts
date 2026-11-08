@@ -27,6 +27,13 @@ interface ConnectedPeer {
   ws: WebSocket;
 }
 
+interface NetworkIface {
+  name: string;
+  ip: string;
+  type: "wifi" | "ethernet" | "other";
+  url: string;
+}
+
 function localRelayPlugin(): Plugin {
   return {
     name: "pulsedrop-local-relay",
@@ -46,38 +53,27 @@ function localRelayPlugin(): Plugin {
         });
       }, 60 * 1000);
 
-      // Helper to detect LAN IPv4
-      const getLocalLanIp = (): string => {
+      // Detect ALL active LAN / Wi-Fi / Ethernet IPv4 interfaces
+      const getAllLanInterfaces = (port: number = 1420): NetworkIface[] => {
         const interfaces = os.networkInterfaces();
+        const list: NetworkIface[] = [];
 
-        // Priority 1: Wi-Fi / WLAN adapters
         for (const ifaceName of Object.keys(interfaces)) {
           const lower = ifaceName.toLowerCase();
-          if (lower.includes("wi-fi") || lower.includes("wlan") || lower.includes("wireless")) {
-            const iface = interfaces[ifaceName];
-            if (!iface) continue;
-            for (const alias of iface) {
-              if (alias.family === "IPv4" && !alias.internal && !alias.address.startsWith("169.254")) {
-                return alias.address;
-              }
-            }
-          }
-        }
-
-        // Priority 2: Non-virtual adapters
-        for (const ifaceName of Object.keys(interfaces)) {
-          const lower = ifaceName.toLowerCase();
+          // Exclude virtual/loopback adapters
           if (
             lower.includes("vmware") ||
             lower.includes("virtual") ||
             lower.includes("vethernet") ||
-            lower.includes("loopback")
+            lower.includes("loopback") ||
+            lower.includes("wsl")
           ) {
             continue;
           }
 
           const iface = interfaces[ifaceName];
           if (!iface) continue;
+
           for (const alias of iface) {
             if (
               alias.family === "IPv4" &&
@@ -86,22 +82,30 @@ function localRelayPlugin(): Plugin {
               !alias.address.startsWith("192.168.56.") &&
               !alias.mac.startsWith("0a:00:27")
             ) {
-              return alias.address;
+              const isWifi = lower.includes("wi-fi") || lower.includes("wlan") || lower.includes("wireless");
+              const isEth = lower.includes("ethernet") || lower.includes("eth") || lower.includes("lan");
+              const type: "wifi" | "ethernet" | "other" = isWifi ? "wifi" : isEth ? "ethernet" : "other";
+
+              list.push({
+                name: ifaceName,
+                ip: alias.address,
+                type,
+                url: `http://${alias.address}:${port}`,
+              });
             }
           }
         }
 
-        // Fallback to first non-internal IPv4
-        for (const ifaceName of Object.keys(interfaces)) {
-          const iface = interfaces[ifaceName];
-          if (!iface) continue;
-          for (const alias of iface) {
-            if (alias.family === "IPv4" && !alias.internal) {
-              return alias.address;
-            }
-          }
-        }
-        return "127.0.0.1";
+        // Prioritize Wi-Fi and Ethernet first
+        list.sort((a, b) => {
+          if (a.type === "wifi" && b.type !== "wifi") return -1;
+          if (b.type === "wifi" && a.type !== "wifi") return 1;
+          if (a.type === "ethernet" && b.type !== "ethernet") return -1;
+          if (b.type === "ethernet" && a.type !== "ethernet") return 1;
+          return 0;
+        });
+
+        return list;
       };
 
       // Set up WebSocket server with noServer: true to avoid interfering with Vite HMR
@@ -151,7 +155,7 @@ function localRelayPlugin(): Plugin {
                 id: dev.id,
                 name: dev.name,
                 os: dev.os,
-                ip: dev.ip || getLocalLanIp(),
+                ip: dev.ip || "127.0.0.1",
                 port: dev.port || 1420,
                 token: dev.token || "web-token",
                 ws,
@@ -195,20 +199,56 @@ function localRelayPlugin(): Plugin {
         });
       });
 
-      // HTTP Middleware for network info and file upload/download
+      // HTTP Middleware for universal network info and file upload/download
       server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next) => {
         const url = req.url || "";
 
         if (url === "/api/network-info") {
-          const lanIp = getLocalLanIp();
+          const allInterfaces = getAllLanInterfaces(1420);
+          const primaryIp = allInterfaces[0]?.ip || "127.0.0.1";
           res.setHeader("Content-Type", "application/json");
           res.end(
             JSON.stringify({
-              ip: lanIp,
+              ip: primaryIp,
               port: 1420,
-              url: `http://${lanIp}:1420`,
+              url: `http://${primaryIp}:1420`,
+              interfaces: allInterfaces,
             })
           );
+          return;
+        }
+
+        // Direct IP Pair endpoint (allows pairing across different subnets / Wi-Fi / Ethernet)
+        if (url === "/api/pair-device" && req.method === "POST") {
+          const chunks: Buffer[] = [];
+          req.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+          req.on("end", () => {
+            try {
+              const body = JSON.parse(Buffer.concat(chunks).toString());
+              const remotePeer = body.peer;
+
+              if (remotePeer && remotePeer.id) {
+                // Broadcast to local WebSocket clients that a peer paired directly via IP
+                const pairMsg = JSON.stringify({
+                  type: "peer-paired",
+                  peer: remotePeer,
+                });
+                peers.forEach((peer) => {
+                  if (peer.ws.readyState === WebSocket.OPEN) {
+                    peer.ws.send(pairMsg);
+                  }
+                });
+
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ success: true, message: "Paired successfully" }));
+                return;
+              }
+            } catch (err) {
+              console.error("[WebRelay] Failed to parse pair-device body:", err);
+            }
+            res.statusCode = 400;
+            res.end(JSON.stringify({ success: false, message: "Invalid peer payload" }));
+          });
           return;
         }
 

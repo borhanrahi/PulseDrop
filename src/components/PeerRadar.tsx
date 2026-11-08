@@ -6,17 +6,24 @@ import {
   Unlink, 
   Plus, 
   QrCode, 
-  RefreshCw,
-  Server
+  RefreshCw, 
+  Server, 
+  Globe, 
+  Wifi, 
+  Network, 
+  ArrowRight, 
+  CheckCircle2 
 } from 'lucide-react';
-import { DeviceInfo } from '../types/pulse';
+import { DeviceInfo, NetworkInterfaceInfo } from '../types/pulse';
 
 interface PeerRadarProps {
   pairedPeers: DeviceInfo[];
   nearbyPeers: DeviceInfo[];
   localDevice: DeviceInfo | null;
+  networkInterfaces?: NetworkInterfaceInfo[];
   onDisconnect: (peerId: string) => void;
   onPairNearby: (peer: DeviceInfo, pin?: string) => Promise<DeviceInfo>;
+  onPairWithIpAddress?: (ipOrUrl: string) => Promise<DeviceInfo>;
   onOpenPairModal: () => void;
 }
 
@@ -24,12 +31,17 @@ export const PeerRadar: React.FC<PeerRadarProps> = ({
   pairedPeers,
   nearbyPeers,
   localDevice,
+  networkInterfaces = [],
   onDisconnect,
   onPairNearby,
+  onPairWithIpAddress,
   onOpenPairModal,
 }) => {
   const [connectingPeerId, setConnectingPeerId] = useState<string | null>(null);
   const [pairingError, setPairingError] = useState<string | null>(null);
+  const [directIpInput, setDirectIpInput] = useState('');
+  const [isDirectConnecting, setIsDirectConnecting] = useState(false);
+  const [directSuccess, setDirectSuccess] = useState<string | null>(null);
 
   const handleConnect = async (peer: DeviceInfo) => {
     setConnectingPeerId(peer.id);
@@ -40,6 +52,25 @@ export const PeerRadar: React.FC<PeerRadarProps> = ({
       setPairingError(e?.toString() || 'Failed to connect to peer');
     } finally {
       setConnectingPeerId(null);
+    }
+  };
+
+  const handleDirectConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directIpInput.trim() || !onPairWithIpAddress) return;
+    
+    setIsDirectConnecting(true);
+    setPairingError(null);
+    setDirectSuccess(null);
+    try {
+      const paired = await onPairWithIpAddress(directIpInput.trim());
+      setDirectSuccess(`Connected to ${paired.name} (${paired.ip})!`);
+      setDirectIpInput('');
+      setTimeout(() => setDirectSuccess(null), 4000);
+    } catch (err: any) {
+      setPairingError(err?.message || 'Could not connect to peer at this address.');
+    } finally {
+      setIsDirectConnecting(false);
     }
   };
 
@@ -60,7 +91,7 @@ export const PeerRadar: React.FC<PeerRadarProps> = ({
             Nearby Radar
           </h1>
           <p className="mt-1 text-xs sm:text-sm text-zinc-400">
-            Real time peer discovery across local Wi-Fi and mobile hotspots
+            Real time peer discovery across Ethernet, Wi-Fi, and office subnets
           </p>
         </div>
         <button
@@ -79,8 +110,15 @@ export const PeerRadar: React.FC<PeerRadarProps> = ({
         </div>
       )}
 
-      {/* Radar Animation Badge */}
-      <div className="mt-6 p-4 rounded-2xl bg-[#181818] border border-[#272727] flex items-center justify-between">
+      {directSuccess && (
+        <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{directSuccess}</span>
+        </div>
+      )}
+
+      {/* Radar Animation Badge & Network Interfaces */}
+      <div className="mt-6 p-4 rounded-2xl bg-[#181818] border border-[#272727] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3.5">
           <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-[#1f1f1f] border border-[#272727]">
             <Radio className="w-5 h-5 text-indigo-400" />
@@ -88,15 +126,71 @@ export const PeerRadar: React.FC<PeerRadarProps> = ({
             <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
           </div>
           <div>
-            <div className="text-sm font-semibold text-zinc-100">mDNS LAN Beacon</div>
-            <div className="text-xs text-zinc-400 font-mono">
-              Broadcasting on {localDevice?.ip || '127.0.0.1'} ({localDevice?.name || 'PulseDrop'})
+            <div className="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+              <span>Universal Mesh Active</span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Online
+              </span>
+            </div>
+            <div className="text-xs text-zinc-400 font-mono mt-0.5">
+              Listening on {localDevice?.ip || '127.0.0.1'}:{localDevice?.port || 1420} ({localDevice?.name || 'PulseDrop'})
             </div>
           </div>
         </div>
-        <span className="text-xs font-mono px-2.5 py-1 rounded-lg bg-[#1f1f1f] text-emerald-400 border border-emerald-500/20">
-          Listening
-        </span>
+
+        {networkInterfaces.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 self-end sm:self-center">
+            {networkInterfaces.map((iface) => (
+              <span
+                key={iface.name}
+                className="text-[10px] font-mono px-2 py-1 rounded-md bg-[#222] border border-[#333] text-zinc-300 flex items-center gap-1.5"
+                title={`${iface.name}: ${iface.ip}`}
+              >
+                {iface.type === 'ethernet' ? (
+                  <Network className="w-3 h-3 text-cyan-400" />
+                ) : (
+                  <Wifi className="w-3 h-3 text-indigo-400" />
+                )}
+                <span className="font-semibold text-zinc-200">{iface.name}:</span>
+                <span className="text-zinc-400">{iface.ip}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Direct IP Connect Form (Universal Cross-Ethernet / Cross-WiFi support) */}
+      <div className="mt-6 p-4 rounded-2xl bg-[#161616] border border-[#272727]">
+        <div className="flex items-center gap-2 mb-2">
+          <Globe className="w-4 h-4 text-indigo-400" />
+          <h2 className="text-xs sm:text-sm font-semibold text-zinc-200">
+            Direct IP Connect (Cross-Subnet / Wi-Fi + Ethernet)
+          </h2>
+        </div>
+        <p className="text-xs text-zinc-400 mb-3">
+          If your colleague is on office Wi-Fi and you are on wired Ethernet (or different access points), enter their IP address or URL below to pair instantly.
+        </p>
+        <form onSubmit={handleDirectConnect} className="flex gap-2">
+          <input
+            type="text"
+            value={directIpInput}
+            onChange={(e) => setDirectIpInput(e.target.value)}
+            placeholder="e.g. 10.200.10.8:1420 or 192.168.1.50"
+            className="flex-1 bg-[#202020] border border-[#2e2e2e] focus:border-indigo-500 rounded-xl px-3 py-2 text-xs sm:text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none transition-colors"
+          />
+          <button
+            type="submit"
+            disabled={isDirectConnecting || !directIpInput.trim()}
+            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-medium flex items-center gap-1.5 disabled:opacity-50 transition-all active:scale-[0.98] shrink-0"
+          >
+            {isDirectConnecting ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <ArrowRight className="w-3.5 h-3.5" />
+            )}
+            <span>Connect</span>
+          </button>
+        </form>
       </div>
 
       {/* Section 1: Active Paired Devices */}
