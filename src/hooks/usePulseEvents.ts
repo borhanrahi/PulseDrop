@@ -32,7 +32,20 @@ const getBrowserDevice = (): { id: string; name: string; os: string } => {
 };
 
 export function usePulseEvents() {
-  const [localDevice, setLocalDevice] = useState<DeviceInfo | null>(null);
+  const [localDevice, setLocalDevice] = useState<DeviceInfo | null>(() => {
+    if (isTauri()) return null;
+    const dev = getBrowserDevice();
+    const hostname = typeof window !== 'undefined' ? window.location.hostname || '127.0.0.1' : '127.0.0.1';
+    const port = typeof window !== 'undefined' ? parseInt(window.location.port, 10) || 1420 : 1420;
+    return {
+      id: dev.id,
+      name: dev.name,
+      os: dev.os,
+      ip: hostname,
+      port,
+      token: 'web-token-' + dev.id,
+    };
+  });
   const [pairedPeers, setPairedPeers] = useState<DeviceInfo[]>([]);
   const [nearbyPeers, setNearbyPeers] = useState<DeviceInfo[]>([]);
   const [clipboardFeed, setClipboardFeed] = useState<ClipboardItem[]>([]);
@@ -60,11 +73,15 @@ export function usePulseEvents() {
     } else {
       // Browser web mode
       const browserDev = getBrowserDevice();
-      let lanIp = window.location.hostname;
+      let lanIp = window.location.hostname || '127.0.0.1';
       let hostUrl = window.location.origin;
 
       try {
-        const res = await fetch('/api/network-info');
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch('/api/network-info', { signal: controller.signal });
+        clearTimeout(timer);
+
         if (res.ok) {
           const info = await res.json();
           if (info.ip && info.ip !== '127.0.0.1') {
@@ -213,6 +230,10 @@ export function usePulseEvents() {
         } catch (e) {
           console.error('[WebRelay] Failed to process message:', e);
         }
+      };
+
+      socket.onerror = () => {
+        // Quietly wait for server reconnect
       };
 
       socket.onclose = () => {
