@@ -2,7 +2,6 @@ import React, { useState, useRef } from 'react';
 import { 
   UploadCloud, 
   FileCheck2, 
-  File, 
   FolderOpen, 
   Download,
   Laptop,
@@ -12,7 +11,9 @@ import {
   Loader2,
   Image,
   FileText,
-  Plus
+  Plus,
+  ArrowDownToLine,
+  ArrowUpToLine
 } from 'lucide-react';
 import { DeviceInfo, TransferProgress, ReceivedFile } from '../types/pulse';
 import { isTauri } from '../hooks/usePulseEvents';
@@ -317,6 +318,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
 
               const isCompleted = transfer.status === 'completed';
               const isFailed = transfer.status === 'failed';
+              const isIncoming = transfer.direction === 'incoming';
 
               return (
                 <div
@@ -325,16 +327,42 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 truncate min-w-0">
-                      <div className={`p-1.5 rounded-lg shrink-0 ${isCompleted ? 'bg-emerald-500/10 text-emerald-400' : 'bg-indigo-500/10 text-indigo-400'}`}>
-                        {isCompleted ? <CheckCircle2 className="w-4 h-4" /> : <File className="w-4 h-4" />}
+                      <div className={`p-1.5 rounded-lg shrink-0 ${
+                        isCompleted 
+                          ? 'bg-emerald-500/10 text-emerald-400' 
+                          : isIncoming
+                          ? 'bg-emerald-500/10 text-emerald-400'
+                          : 'bg-indigo-500/10 text-indigo-400'
+                      }`}>
+                        {isCompleted ? (
+                          <CheckCircle2 className="w-4 h-4" />
+                        ) : isIncoming ? (
+                          <ArrowDownToLine className="w-4 h-4 animate-bounce" />
+                        ) : (
+                          <ArrowUpToLine className="w-4 h-4" />
+                        )}
                       </div>
-                      <span className="text-xs font-semibold text-zinc-100 truncate">
-                        {transfer.file_name}
-                      </span>
+                      <div className="truncate min-w-0">
+                        <span className="text-xs font-semibold text-zinc-100 truncate block">
+                          {transfer.file_name}
+                        </span>
+                        <span className="text-[10px] text-zinc-400">
+                          {isIncoming 
+                            ? `Incoming from ${transfer.sender_name || 'Connected Peer'}` 
+                            : `Sending to ${activePeer?.name || 'Connected Peer'}`}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs font-mono font-bold text-white bg-indigo-600/30 px-2 py-0.5 rounded-md border border-indigo-500/30">
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                        isIncoming 
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                          : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                      }`}>
+                        {isIncoming ? '📥 Receiving' : '📤 Sending'}
+                      </span>
+                      <span className="text-xs font-mono font-bold text-white bg-[#141414] px-2 py-0.5 rounded-md border border-[#2d2d2d]">
                         {percent}%
                       </span>
                     </div>
@@ -348,6 +376,8 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
                           ? 'bg-gradient-to-r from-emerald-500 to-teal-400 shadow-sm shadow-emerald-500/50'
                           : isFailed
                           ? 'bg-rose-500'
+                          : isIncoming
+                          ? 'bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-400 animate-pulse'
                           : 'bg-gradient-to-r from-indigo-500 via-violet-500 to-emerald-400 animate-pulse'
                       }`}
                       style={{ width: `${percent}%` }}
@@ -361,15 +391,17 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
                     <span className="flex items-center gap-1 font-sans font-medium">
                       {isCompleted ? (
                         <span className="text-emerald-400 flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Transfer Complete
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {isIncoming ? 'Downloaded & Saved' : 'Transfer Complete'}
                         </span>
                       ) : isFailed ? (
                         <span className="text-rose-400 flex items-center gap-1">
                           <AlertCircle className="w-3.5 h-3.5" /> Transfer Failed
                         </span>
                       ) : (
-                        <span className="text-indigo-400 flex items-center gap-1">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Transferring via Wi-Fi...
+                        <span className={isIncoming ? "text-emerald-400 flex items-center gap-1" : "text-indigo-400 flex items-center gap-1"}>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          {isIncoming ? 'Receiving via LAN...' : 'Sending via LAN...'}
                         </span>
                       )}
                     </span>

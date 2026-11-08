@@ -246,7 +246,35 @@ export function usePulseEvents() {
             if (navigator.clipboard && navigator.clipboard.writeText) {
               navigator.clipboard.writeText(msg.text).catch(() => {});
             }
+          } else if (msg.type === 'transfer-progress') {
+            // Live transfer progress received by the receiver!
+            setActiveTransfers((prev) => ({
+              ...prev,
+              [msg.transfer_id]: {
+                transfer_id: msg.transfer_id,
+                file_name: msg.file_name,
+                direction: msg.direction || 'incoming',
+                total_bytes: msg.total_bytes,
+                bytes_transferred: msg.bytes_transferred,
+                status: msg.status || 'transferring',
+                sender_name: msg.sender_name,
+              },
+            }));
           } else if (msg.type === 'file-offer') {
+            // Mark active transfer as completed for receiver
+            setActiveTransfers((prev) => ({
+              ...prev,
+              [msg.transfer_id]: {
+                transfer_id: msg.transfer_id,
+                file_name: msg.file_name,
+                direction: 'incoming',
+                total_bytes: msg.file_size,
+                bytes_transferred: msg.file_size,
+                status: 'completed',
+                sender_name: msg.sender_name,
+              },
+            }));
+
             const receivedFile: ReceivedFile = {
               transfer_id: msg.transfer_id,
               file_name: msg.file_name,
@@ -567,6 +595,7 @@ export function usePulseEvents() {
         [transferId]: {
           transfer_id: transferId,
           file_name: file.name,
+          direction: 'outgoing',
           bytes_transferred: 0,
           total_bytes: file.size,
           status: 'transferring',
@@ -592,6 +621,7 @@ export function usePulseEvents() {
               [transferId]: {
                 transfer_id: transferId,
                 file_name: file.name,
+                direction: 'outgoing',
                 bytes_transferred: event.loaded,
                 total_bytes: event.total,
                 status: 'transferring',
@@ -607,6 +637,7 @@ export function usePulseEvents() {
               [transferId]: {
                 transfer_id: transferId,
                 file_name: file.name,
+                direction: 'outgoing',
                 bytes_transferred: file.size,
                 total_bytes: file.size,
                 status: 'completed',
@@ -619,6 +650,7 @@ export function usePulseEvents() {
               [transferId]: {
                 transfer_id: transferId,
                 file_name: file.name,
+                direction: 'outgoing',
                 bytes_transferred: 0,
                 total_bytes: file.size,
                 status: 'failed',
@@ -634,6 +666,7 @@ export function usePulseEvents() {
             [transferId]: {
               transfer_id: transferId,
               file_name: file.name,
+              direction: 'outgoing',
               bytes_transferred: 0,
               total_bytes: file.size,
               status: 'failed',

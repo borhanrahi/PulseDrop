@@ -19,7 +19,9 @@ export interface TransferProgress {
   file_name: string;
   bytes_transferred: number;
   total_bytes: number;
-  status: 'transferring' | 'completed' | 'failed';
+  status: 'transferring' | 'completed' | 'failed' | 'in_progress';
+  direction?: 'incoming' | 'outgoing';
+  sender_name?: string;
 }
 
 export interface ClipboardItem {

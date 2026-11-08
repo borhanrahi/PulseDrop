@@ -277,9 +277,59 @@ function localRelayPlugin(): Plugin {
           const senderName = decodeURIComponent((req.headers["x-sender-name"] as string) || "Nearby Peer");
           const targetId = (req.headers["x-target-id"] as string) || "";
 
+          const notifyTarget = (msg: string) => {
+            if (targetId && peers.has(targetId)) {
+              const target = peers.get(targetId);
+              if (target && target.ws.readyState === WebSocket.OPEN) {
+                target.ws.send(msg);
+                return;
+              }
+            }
+            peers.forEach((peer) => {
+              if (peer.id !== senderId && peer.ws.readyState === WebSocket.OPEN) {
+                peer.ws.send(msg);
+              }
+            });
+          };
+
+          // Immediately broadcast incoming transfer starting to receiver
+          const initProgressMsg = JSON.stringify({
+            type: "transfer-progress",
+            transfer_id: transferId,
+            file_name: fileName,
+            direction: "incoming",
+            total_bytes: fileSize,
+            bytes_transferred: 0,
+            status: "in_progress",
+            sender_name: senderName,
+          });
+          notifyTarget(initProgressMsg);
+
           const chunks: Buffer[] = [];
+          let bytesReceived = 0;
+          let lastBroadcastTime = 0;
+
           req.on("data", (chunk) => {
-            chunks.push(Buffer.from(chunk));
+            const buf = Buffer.from(chunk);
+            chunks.push(buf);
+            bytesReceived += buf.length;
+
+            const now = Date.now();
+            // Throttle to 50ms so UI updates smoothly without flooding network
+            if (now - lastBroadcastTime > 50 || bytesReceived === fileSize) {
+              lastBroadcastTime = now;
+              const progressMsg = JSON.stringify({
+                type: "transfer-progress",
+                transfer_id: transferId,
+                file_name: fileName,
+                direction: "incoming",
+                total_bytes: fileSize || bytesReceived,
+                bytes_transferred: bytesReceived,
+                status: bytesReceived >= fileSize && fileSize > 0 ? "completed" : "in_progress",
+                sender_name: senderName,
+              });
+              notifyTarget(progressMsg);
+            }
           });
 
           req.on("end", () => {
@@ -296,8 +346,20 @@ function localRelayPlugin(): Plugin {
               createdAt: Date.now(),
             });
 
-            const targetPeer = peers.get(targetId);
             const downloadUrl = `/api/download/${transferId}`;
+
+            // Send final completion progress update to receiver
+            const completedMsg = JSON.stringify({
+              type: "transfer-progress",
+              transfer_id: transferId,
+              file_name: fileName,
+              direction: "incoming",
+              total_bytes: fileSize || buffer.length,
+              bytes_transferred: fileSize || buffer.length,
+              status: "completed",
+              sender_name: senderName,
+            });
+            notifyTarget(completedMsg);
 
             const offerMsg = JSON.stringify({
               type: "file-offer",
@@ -309,15 +371,7 @@ function localRelayPlugin(): Plugin {
               download_url: downloadUrl,
             });
 
-            if (targetPeer && targetPeer.ws.readyState === WebSocket.OPEN) {
-              targetPeer.ws.send(offerMsg);
-            } else {
-              peers.forEach((peer) => {
-                if (peer.id !== senderId && peer.ws.readyState === WebSocket.OPEN) {
-                  peer.ws.send(offerMsg);
-                }
-              });
-            }
+            notifyTarget(offerMsg);
 
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({ success: true, transferId, downloadUrl }));
