@@ -14,6 +14,8 @@
 :root {
   font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
   color-scheme: dark;
+  --safe-area-inset-top: env(safe-area-inset-top, 0px);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* Custom scrollbars */

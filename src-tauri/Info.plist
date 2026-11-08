@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>PulseDrop needs access to the camera to scan QR codes for quick pairing with nearby devices.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>PulseDrop uses the local network to discover and exchange files and clipboard items with nearby devices.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_pulsedrop._tcp</string>
+	</array>
+</dict>
+</plist>

@@ -6,7 +6,8 @@ import {
   QrCode, 
   Laptop, 
   Smartphone, 
-  CircleDot
+  CircleDot,
+  Camera
 } from 'lucide-react';
 import { DeviceInfo } from '../types/pulse';
 
@@ -18,6 +19,7 @@ interface NavbarProps {
   clipboardSyncEnabled: boolean;
   onToggleClipboardSync: (enabled: boolean) => void;
   onOpenPairModal: () => void;
+  onDirectScan: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -28,6 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   clipboardSyncEnabled,
   onToggleClipboardSync,
   onOpenPairModal,
+  onDirectScan,
 }) => {
   const isMobileOS = localDevice?.os === 'android' || localDevice?.os === 'ios';
 
@@ -163,7 +166,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       </aside>
 
       {/* Mobile Top Header (< md) */}
-      <header className="flex md:hidden items-center justify-between px-4 py-3 bg-[#181818] border-b border-[#272727] select-none shrink-0 w-full z-20">
+      <header className="flex md:hidden items-center justify-between px-4 pt-[max(env(safe-area-inset-top,0px),28px)] pb-3.5 bg-[#181818] border-b border-[#272727] select-none shrink-0 w-full z-20">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white shadow-sm shadow-indigo-500/20">
             <Radio className="w-4 h-4 text-white animate-pulse" />
@@ -176,40 +179,42 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Online
               </span>
             </div>
-            <div className="text-[10px] font-mono text-zinc-400 truncate max-w-[170px]">
+            <div className="text-[10px] font-mono text-zinc-400 truncate max-w-[150px]">
               {localDevice?.name || 'Local'} • {localDevice?.ip || '127.0.0.1'}
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Direct Mobile Scan Button */}
+          <button
+            onClick={onDirectScan}
+            className="flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition-all active:scale-95"
+            title="Scan QR Code to Connect"
+          >
+            <Camera className="w-3.5 h-3.5" />
+            <span>Scan</span>
+          </button>
+
           {pairedCount > 0 ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>{pairedCount} Paired</span>
+              <span>{pairedCount}</span>
             </div>
           ) : (
             <button
               onClick={onOpenPairModal}
-              className="flex items-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition-all active:scale-95"
+              title="Show Pairing QR"
+              className="p-1.5 rounded-lg bg-[#272727] text-zinc-300 hover:text-white transition-colors"
             >
-              <QrCode className="w-3.5 h-3.5" />
-              <span>Pair</span>
+              <QrCode className="w-4 h-4" />
             </button>
           )}
-
-          <button
-            onClick={onOpenPairModal}
-            title="Show Pairing QR"
-            className="p-1.5 rounded-lg bg-[#272727] text-zinc-300 hover:text-white"
-          >
-            <QrCode className="w-4 h-4" />
-          </button>
         </div>
       </header>
 
       {/* Mobile Bottom Navigation Bar (< md) */}
-      <nav className="flex md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#181818]/95 backdrop-blur-md border-t border-[#272727] items-center justify-around px-3 z-40 select-none">
+      <nav className="flex md:hidden fixed bottom-0 left-0 right-0 pt-2 pb-[max(env(safe-area-inset-bottom,0px),12px)] bg-[#181818]/95 backdrop-blur-md border-t border-[#272727] items-center justify-around px-2 z-40 select-none">
         <button
           onClick={() => setCurrentTab('drop')}
           className={`flex flex-col items-center justify-center flex-1 py-1 rounded-xl transition-all ${
@@ -239,6 +244,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
           <span className="text-[10px] mt-0.5">Radar</span>
+        </button>
+
+        {/* Dedicated Scan button right in the middle */}
+        <button
+          onClick={onDirectScan}
+          className="flex flex-col items-center justify-center flex-1 py-1 rounded-xl text-indigo-400 hover:text-indigo-300 transition-all active:scale-95"
+          title="Direct Camera Scan"
+        >
+          <div className="p-1 rounded-lg bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
+            <Camera className="w-5 h-5" />
+          </div>
+          <span className="text-[10px] mt-0.5 font-medium">Scan</span>
         </button>
 
         <button

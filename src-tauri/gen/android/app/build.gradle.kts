@@ -15,16 +15,34 @@ val tauriProperties = Properties().apply {
 }
 
 android {
-    compileSdk = 37
+    compileSdk = 35
     namespace = "com.pulsedrop.client"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "true"
         applicationId = "com.pulsedrop.client"
         minSdk = 24
-        targetSdk = 37
+        targetSdk = 35
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
+
+    val keystoreFile = file("pulsedrop.jks")
+    signingConfigs {
+        create("release") {
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = System.getenv("PULSEDROP_KEY_PASSWORD") ?: "pulsedrop123"
+                keyAlias = System.getenv("PULSEDROP_KEY_ALIAS") ?: "pulsedrop"
+                keyPassword = System.getenv("PULSEDROP_KEY_PASSWORD") ?: "pulsedrop123"
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            } else {
+                initWith(getByName("debug"))
+            }
+        }
+    }
+
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
@@ -39,9 +57,10 @@ android {
             }
         }
         getByName("release") {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
             optimization {
-               enable = true
+               enable = false
             }
             proguardFiles(
                 *fileTree(".") {

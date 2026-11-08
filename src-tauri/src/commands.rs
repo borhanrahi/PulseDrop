@@ -17,16 +17,63 @@ pub async fn pair_with_qr_payload(
     state: State<'_, Arc<AppState>>,
     app_handle: AppHandle,
 ) -> Result<DeviceInfo, String> {
-    // 1. Parse JSON payload
-    let peer_info: DeviceInfo = serde_json::from_str(&payload_json)
-        .map_err(|e| format!("Invalid QR code payload: {}", e))?;
+    let trimmed = payload_json.trim();
 
-    // 2. Validate fields
-    if peer_info.ip.is_empty() || peer_info.port == 0 || peer_info.token.is_empty() {
-        return Err("Malformed peer payload: missing IP, port, or token".to_string());
+    // 1. Check if it's a URL (from web browser sharing or mobile QR code)
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        if let Ok(parsed_url) = url::Url::parse(trimmed) {
+            let host = parsed_url.host_str().unwrap_or("127.0.0.1").to_string();
+            let port = parsed_url.port().unwrap_or(1420);
+            let mut pair_id = format!("lan-{}-{}", host.replace('.', "-"), port);
+            let mut name = format!("Device ({})", host);
+
+            for (k, v) in parsed_url.query_pairs() {
+                if k == "pair" && !v.is_empty() {
+                    pair_id = v.to_string();
+                } else if k == "name" && !v.is_empty() {
+                    name = v.to_string();
+                }
+            }
+
+            let peer_info = DeviceInfo {
+                id: pair_id,
+                name,
+                os: "remote".to_string(),
+                ip: host,
+                port,
+                token: "paired-token".to_string(),
+            };
+
+            return pair_with_nearby_peer(peer_info, None, state, app_handle).await;
+        }
     }
 
-    // 3. Initiate outbound WebSocket connection & handshake
+    // 2. Check if it's a plain IP address or IP:PORT
+    let ip_pattern = trimmed.replace("http://", "").replace("https://", "");
+    if let Some((ip, port_str)) = ip_pattern.split_once(':') {
+        if let Ok(port) = port_str.parse::<u16>() {
+            let peer_info = DeviceInfo {
+                id: format!("lan-{}-{}", ip.replace('.', "-"), port),
+                name: format!("Device ({})", ip),
+                os: "remote".to_string(),
+                ip: ip.to_string(),
+                port,
+                token: "paired-token".to_string(),
+            };
+            return pair_with_nearby_peer(peer_info, None, state, app_handle).await;
+        }
+    }
+
+    // 3. Parse JSON payload (from PulseDrop desktop app QR code)
+    let peer_info: DeviceInfo = serde_json::from_str(trimmed)
+        .map_err(|e| format!("Invalid QR code payload: {}", e))?;
+
+    // Validate fields
+    if peer_info.ip.is_empty() || peer_info.port == 0 {
+        return Err("Malformed peer payload: missing IP or port".to_string());
+    }
+
+    // Initiate outbound WebSocket connection & handshake
     connect_to_peer(peer_info.clone(), state.inner().clone(), app_handle)
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;

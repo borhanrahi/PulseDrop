@@ -1,7 +1,7 @@
 # ⚡ PulseDrop
 
 > **Zero-Cloud, High-Speed Local File Sharing & Clipboard Synchronization**  
-> Effortlessly drop files and sync clipboard text across your PC, Mac, Linux, iPhone, Android, and colleagues on the same network — without sending a single byte to the cloud.
+> Effortlessly drop files and sync clipboard text across your Web Browser, Windows, Mac, Linux, iPhone, Android, and colleagues on the same network — without sending a single byte to the cloud.
 
 ---
 

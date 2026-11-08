@@ -170,20 +170,58 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+      - name: Generate Production Release Keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore src-tauri/gen/android/app/pulsedrop.jks \
+            -alias pulsedrop \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass pulsedrop123 \
+            -keypass pulsedrop123 \
+            -dname "CN=PulseDrop, OU=PulseDrop Release, O=PulseDrop Open Source, L=San Francisco, ST=California, C=US"
+
       - name: Build Android APK
         run: |
           npx tauri android build --apk
         env:
           NDK_HOME: ${{ env.NDK_HOME }}
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          PULSEDROP_KEY_PASSWORD: pulsedrop123
+          PULSEDROP_KEY_ALIAS: pulsedrop
 
-      - name: Prepare APK for Release
+      - name: Prepare and Sign APK for Release
         run: |
           mkdir -p release-apk
+          BUILD_TOOLS=$(find $ANDROID_HOME/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
+          echo "Using Android Build Tools: $BUILD_TOOLS"
+
           find src-tauri/gen/android/app/build/outputs/apk -type f -name "*.apk" | while read -r apk; do
-            echo "Found APK: $apk"
+            echo "Processing APK: $apk"
             fname=$(basename "$apk")
-            cp "$apk" "release-apk/PulseDrop-${{ needs.create-release.outputs.tag_name }}-${fname}"
+            out_apk="release-apk/PulseDrop-${{ needs.create-release.outputs.tag_name }}-${fname}"
+
+            # 4-byte align the APK
+            if [ -f "$BUILD_TOOLS/zipalign" ]; then
+              $BUILD_TOOLS/zipalign -p -f 4 "$apk" "$out_apk" || cp "$apk" "$out_apk"
+            else
+              cp "$apk" "$out_apk"
+            fi
+
+            # Sign with V1, V2, and V3 signatures using production release keystore
+            if [ -f "$BUILD_TOOLS/apksigner" ]; then
+              $BUILD_TOOLS/apksigner sign \
+                --ks src-tauri/gen/android/app/pulsedrop.jks \
+                --ks-key-alias pulsedrop \
+                --ks-pass pass:pulsedrop123 \
+                --v1-signing-enabled true \
+                --v2-signing-enabled true \
+                --v3-signing-enabled true \
+                "$out_apk" || true
+
+              $BUILD_TOOLS/apksigner verify --verbose "$out_apk" || true
+            fi
           done
           ls -la release-apk/
 
@@ -220,9 +258,16 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Initialize iOS Project
+      - name: Initialize iOS Project & Configure Permissions
         run: |
           npx tauri ios init --ci || true
+          find src-tauri/gen/apple -name "Info.plist" | while read -r plist; do
+            echo "Configuring permissions for $plist"
+            /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'PulseDrop needs access to the camera to scan QR codes for quick pairing with nearby devices.'" "$plist" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :NSCameraUsageDescription 'PulseDrop needs access to the camera to scan QR codes for quick pairing with nearby devices.'" "$plist" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 'PulseDrop uses the local network to discover and exchange files with nearby devices.'" "$plist" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :NSLocalNetworkUsageDescription 'PulseDrop uses the local network to discover and exchange files with nearby devices.'" "$plist" 2>/dev/null || true
+          done
 
       - name: Build iOS Application
         run: |

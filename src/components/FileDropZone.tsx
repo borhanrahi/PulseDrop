@@ -14,7 +14,8 @@ import {
   Plus,
   ArrowDownToLine,
   ArrowUpToLine,
-  Zap
+  Zap,
+  Camera
 } from 'lucide-react';
 import { DeviceInfo, TransferProgress, ReceivedFile } from '../types/pulse';
 import { isTauri } from '../hooks/usePulseEvents';
@@ -24,6 +25,7 @@ interface FileDropZoneProps {
   activeTransfers: Record<string, TransferProgress>;
   receivedFiles: ReceivedFile[];
   onOpenPairModal: () => void;
+  onDirectScan?: () => void;
   onSendFiles?: (targetPeerId: string, files: File[]) => Promise<void>;
 }
 
@@ -32,6 +34,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
   activeTransfers,
   receivedFiles,
   onOpenPairModal,
+  onDirectScan,
   onSendFiles,
 }) => {
   const [selectedPeerId, setSelectedPeerId] = useState<string>(
@@ -302,12 +305,25 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={onOpenPairModal}
-              className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 active:scale-95 transition-all shrink-0"
-            >
-              Connect Device
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {onDirectScan && (
+                <button
+                  onClick={onDirectScan}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20 active:scale-95 transition-all"
+                  title="Scan QR Code to Connect"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Scan QR</span>
+                </button>
+              )}
+              <button
+                onClick={onOpenPairModal}
+                className="px-3 py-2 rounded-xl text-xs font-medium bg-[#222222] hover:bg-[#2a2a2a] text-zinc-300 border border-[#2d2d2d] active:scale-95 transition-all"
+                title="Show Pairing QR"
+              >
+                {onDirectScan ? 'Show QR' : 'Connect Device'}
+              </button>
+            </div>
           </div>
         )}
       </div>

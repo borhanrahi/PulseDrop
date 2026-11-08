@@ -169,17 +169,35 @@ export const PairModal: React.FC<PairModalProps> = ({
       return;
     }
     try {
-      const { scan, Format } = await import('@tauri-apps/plugin-barcode-scanner');
+      const { checkPermissions, requestPermissions, scan, Format } = await import('@tauri-apps/plugin-barcode-scanner');
+      let perm = await checkPermissions();
+      if (perm !== 'granted') {
+        perm = await requestPermissions();
+      }
+      if (perm !== 'granted') {
+        setErrorMsg('Camera permission is required to scan QR code');
+        return;
+      }
+
       const result = await scan({
         windowed: false,
         formats: [Format.QRCode],
       });
       if (result && result.content) {
+        try {
+          const { notificationFeedback } = await import('@tauri-apps/plugin-haptics');
+          await notificationFeedback('success');
+        } catch {
+          // ignore haptics error
+        }
         await onPairWithPayload(result.content);
         onClose();
       }
     } catch (err: any) {
-      setErrorMsg('Camera scan failed: ' + (err?.message || err));
+      const msg = err?.message || String(err);
+      if (!msg.toLowerCase().includes('cancel')) {
+        setErrorMsg('Camera scan failed: ' + msg);
+      }
     }
   };
 
