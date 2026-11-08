@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "node ./scripts/tauri-runner.cjs"
+    "tauri": "node ./scripts/tauri-runner.cjs",
+    "tauri:android": "node ./scripts/tauri-runner.cjs android",
+    "tauri:ios": "node ./scripts/tauri-runner.cjs ios"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

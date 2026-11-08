@@ -110,16 +110,46 @@ The compiled assets will be written to the `dist/` directory. You can preview th
 npm run preview
 ```
 
-### Native Desktop / Mobile Build (Tauri v2)
-*(Requires Rust and platform build tools)*
+### Native Multi-Platform Builds (Tauri v2)
 
+Tauri compiles native machine code:
+- **On Windows**: Compiles `.exe` (NSIS installer) and `.msi` packages.
+- **On macOS**: Compiles `.dmg` disk image and `.app` bundle.
+- **On Linux**: Compiles `.deb` and `.AppImage` packages.
+- **For Android**: Compiles `.apk` and `.aab` packages.
+- **For iOS**: Compiles `.ipa` and Xcode projects (requires macOS).
+
+#### 1. Local Desktop Build
 ```bash
-# Run Tauri desktop app in development
+# Development desktop mode
 npm run tauri dev
 
-# Compile release binaries (.exe, .dmg, .deb, etc.)
+# Build production Windows .exe / .msi installer
 npm run tauri build
 ```
+
+#### 2. Local Android Build (Windows / Linux / Mac)
+Requires [Android Studio](https://developer.android.com/studio) and Android SDK / NDK installed:
+```bash
+# Initialize Android project
+npm run tauri:android init
+
+# Build release APK
+npm run tauri:android build --apk
+```
+
+#### 3. Automated Cloud Multi-Platform Release (Windows, Mac, Linux, Android, iOS)
+PulseDrop includes an automated **GitHub Actions CI/CD pipeline** (`.github/workflows/release.yml`).
+
+Whenever you want to build **all platforms simultaneously**:
+1. Push your code with a version tag (e.g., `git tag v0.1.0 && git push origin v0.1.0`), OR
+2. Go to your GitHub repository -> **Actions** -> **Release Multi-Platform Builds** -> **Run workflow**.
+
+GitHub's cloud runners will automatically build and publish:
+- `PulseDrop_x64-setup.exe` & `.msi` (Windows)
+- `PulseDrop_universal.dmg` (macOS Intel + Apple Silicon)
+- `PulseDrop_amd64.deb` & `.AppImage` (Linux)
+- `PulseDrop.apk` (Android sideloadable APK)
 
 ---
 
