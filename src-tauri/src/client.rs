@@ -193,9 +193,10 @@ pub async fn send_file_to_peer(
     let upload_url = format!("http://{}:{}/upload", peer.ip, peer.port);
 
     let bytes_transferred = Arc::new(AtomicU64::new(0));
-    let last_emit_instant = Arc::new(tokio::sync::Mutex::new((Instant::now(), 0u64)));
+    let last_emit_instant = Arc::new(tokio::sync::Mutex::new((Instant::now(), 0u64, 0u64)));
 
-    let stream = tokio_util::io::ReaderStream::new(file);
+    // Use high-speed 512 KB buffer for maximum local gigabit / Wi-Fi throughput
+    let stream = tokio_util::io::ReaderStream::with_capacity(file, 512 * 1024);
 
     let transfer_id_clone = transfer_id.clone();
     let file_name_clone = file_name.clone();
@@ -218,14 +219,21 @@ pub async fn send_file_to_peer(
             tokio::spawn(async move {
                 let mut guard = le.lock().await;
                 let elapsed = guard.0.elapsed();
-                if elapsed.as_millis() >= 120 || transferred >= total_bytes {
+                // Throttle progress events to 250ms to keep network pipeline saturated without event-loop lag
+                if elapsed.as_millis() >= 250 || transferred >= total_bytes {
                     let elapsed_secs = elapsed.as_secs_f64();
-                    let speed = if elapsed_secs > 0.0 && transferred > guard.1 {
+                    let instant_speed = if elapsed_secs > 0.0 && transferred > guard.1 {
                         ((transferred - guard.1) as f64 / elapsed_secs) as u64
                     } else {
-                        0
+                        guard.2
                     };
-                    *guard = (Instant::now(), transferred);
+                    // Exponential Moving Average (EMA) smoothing: 70% current + 30% previous
+                    let smoothed_speed = if guard.2 > 0 {
+                        ((instant_speed as f64 * 0.7) + (guard.2 as f64 * 0.3)) as u64
+                    } else {
+                        instant_speed
+                    };
+                    *guard = (Instant::now(), transferred, smoothed_speed);
 
                     let progress = TransferProgress {
                         transfer_id: t_id,
@@ -237,7 +245,7 @@ pub async fn send_file_to_peer(
                         } else {
                             "transferring".to_string()
                         },
-                        speed_bps: Some(speed),
+                        speed_bps: Some(smoothed_speed),
                         direction: Some("outgoing".to_string()),
                     };
 
@@ -251,7 +259,11 @@ pub async fn send_file_to_peer(
         chunk_res
     });
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .tcp_nodelay(true)
+        .pool_max_idle_per_host(10)
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let mut headers = HeaderMap::new();
     headers.insert(
         AUTHORIZATION,

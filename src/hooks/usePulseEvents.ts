@@ -399,8 +399,12 @@ export function usePulseEvents() {
           if ((!speed_bps || speed_bps === 0) && prevItem && event.payload.status === 'transferring') {
             const timeDiff = (now - ((prevItem as any)._lastUpdateTime || now)) / 1000;
             const bytesDiff = event.payload.bytes_transferred - prevItem.bytes_transferred;
-            if (timeDiff > 0.1 && bytesDiff > 0) {
-              speed_bps = Math.round(bytesDiff / timeDiff);
+            if (timeDiff > 0.15 && bytesDiff > 0) {
+              const instantSpeed = Math.round(bytesDiff / timeDiff);
+              // EMA smoothing (70% instant + 30% previous)
+              speed_bps = prevItem.speed_bps && prevItem.speed_bps > 0
+                ? Math.round(instantSpeed * 0.7 + prevItem.speed_bps * 0.3)
+                : instantSpeed;
             } else if (prevItem.speed_bps) {
               speed_bps = prevItem.speed_bps;
             }
@@ -667,25 +671,29 @@ export function usePulseEvents() {
           if (event.lengthComputable) {
             const now = Date.now();
             const elapsed = (now - lastSampleTime) / 1000;
-            if (elapsed >= 0.2) {
+            // Throttle UI update to 250ms with exponential moving average to prevent speed drop artifacts
+            if (elapsed >= 0.25) {
               const diff = event.loaded - lastLoadedBytes;
-              currentSpeedBps = Math.round(diff / elapsed);
+              const instantSpeed = Math.round(diff / elapsed);
+              currentSpeedBps = currentSpeedBps > 0
+                ? Math.round(instantSpeed * 0.7 + currentSpeedBps * 0.3)
+                : instantSpeed;
               lastSampleTime = now;
               lastLoadedBytes = event.loaded;
-            }
 
-            setActiveTransfers((prev) => ({
-              ...prev,
-              [transferId]: {
-                transfer_id: transferId,
-                file_name: file.name,
-                direction: 'outgoing',
-                bytes_transferred: event.loaded,
-                total_bytes: event.total,
-                speed_bps: currentSpeedBps,
-                status: 'transferring',
-              },
-            }));
+              setActiveTransfers((prev) => ({
+                ...prev,
+                [transferId]: {
+                  transfer_id: transferId,
+                  file_name: file.name,
+                  direction: 'outgoing',
+                  bytes_transferred: event.loaded,
+                  total_bytes: event.total,
+                  speed_bps: currentSpeedBps,
+                  status: 'transferring',
+                },
+              }));
+            }
           }
         };
 

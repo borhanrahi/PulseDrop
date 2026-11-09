@@ -366,32 +366,40 @@ async fn upload_handler(
         counter += 1;
     }
 
-    // 4. Stream incoming chunks directly to disk
-    let mut file = tokio::fs::File::create(&target_path)
+    // 4. Stream incoming chunks directly to disk with 512KB buffer for maximum I/O performance
+    let file = tokio::fs::File::create(&target_path)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create file: {}", e)))?;
+    let mut writer = tokio::io::BufWriter::with_capacity(512 * 1024, file);
 
     let mut body_stream = req.into_body().into_data_stream();
     let mut bytes_transferred: u64 = 0;
     let mut last_emit = std::time::Instant::now();
     let mut last_bytes: u64 = 0;
+    let mut smoothed_speed: u64 = 0;
 
     while let Some(chunk_res) = body_stream.next().await {
         let chunk = chunk_res
             .map_err(|e| (StatusCode::BAD_REQUEST, format!("Error reading body chunk: {}", e)))?;
-        file.write_all(&chunk)
+        writer.write_all(&chunk)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Disk write error: {}", e)))?;
 
         bytes_transferred += chunk.len() as u64;
 
         let elapsed = last_emit.elapsed();
-        if elapsed.as_millis() >= 120 {
+        // Throttle progress events to 250ms to keep network pipeline saturated without event-loop lag
+        if elapsed.as_millis() >= 250 {
             let elapsed_secs = elapsed.as_secs_f64();
-            let speed = if elapsed_secs > 0.0 && bytes_transferred > last_bytes {
+            let instant_speed = if elapsed_secs > 0.0 && bytes_transferred > last_bytes {
                 ((bytes_transferred - last_bytes) as f64 / elapsed_secs) as u64
             } else {
-                0
+                smoothed_speed
+            };
+            smoothed_speed = if smoothed_speed > 0 {
+                ((instant_speed as f64 * 0.7) + (smoothed_speed as f64 * 0.3)) as u64
+            } else {
+                instant_speed
             };
             last_bytes = bytes_transferred;
             last_emit = std::time::Instant::now();
@@ -404,14 +412,14 @@ async fn upload_handler(
                     bytes_transferred,
                     total_bytes: if total_bytes > 0 { total_bytes } else { bytes_transferred },
                     status: "transferring".to_string(),
-                    speed_bps: Some(speed),
+                    speed_bps: Some(smoothed_speed),
                     direction: Some("incoming".to_string()),
                 },
             );
         }
     }
 
-    file.flush()
+    writer.flush()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Flush error: {}", e)))?;
 
@@ -480,7 +488,8 @@ async fn download_file_handler(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read file: {}", e)))?;
 
-    let stream = tokio_util::io::ReaderStream::new(file);
+    // High throughput 512KB buffer for gigabit transfers
+    let stream = tokio_util::io::ReaderStream::with_capacity(file, 512 * 1024);
     let body = axum::body::Body::from_stream(stream);
 
     let content_disposition = format!("attachment; filename=\"{}\"", safe_file_name);
