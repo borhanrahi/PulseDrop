@@ -286,6 +286,8 @@ pub async fn send_file_to_peer(
             bytes_transferred: bytes_transferred.load(Ordering::Relaxed),
             total_bytes,
             status: "failed".to_string(),
+            speed_bps: Some(0),
+            direction: Some("outgoing".to_string()),
         };
         if let Some(ch) = &channel {
             let _ = ch.send(fail_progress.clone());
@@ -301,6 +303,8 @@ pub async fn send_file_to_peer(
         bytes_transferred: total_bytes,
         total_bytes,
         status: "completed".to_string(),
+        speed_bps: Some(0),
+        direction: Some("outgoing".to_string()),
     };
     if let Some(ch) = &channel {
         let _ = ch.send(final_progress.clone());

@@ -28,7 +28,7 @@ pub enum WireMessage {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TransferProgress {
     pub transfer_id: String,
     pub file_name: String,
