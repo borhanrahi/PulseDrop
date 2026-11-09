@@ -188,7 +188,8 @@ pub async fn get_download_dir(app_handle: AppHandle) -> Result<String, String> {
 fn open_android_file_via_jni(path: &str) -> Result<(), String> {
     use jni::objects::JValue;
 
-    let vm = tauri::android_binding::get_java_vm()
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
         .map_err(|e| format!("Failed to get Java VM: {:?}", e))?;
     let mut env = vm
         .attach_current_thread()
@@ -216,10 +217,9 @@ fn open_android_file_via_jni(path: &str) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn open_file_in_manager(path: String, _app_handle: AppHandle) -> Result<(), String> {
-    let p = std::path::Path::new(&path);
-
     #[cfg(target_os = "windows")]
     {
+        let p = std::path::Path::new(&path);
         if p.exists() {
             let _ = std::process::Command::new("explorer")
                 .arg(format!("/select,{}", path))
@@ -238,6 +238,7 @@ pub async fn open_file_in_manager(path: String, _app_handle: AppHandle) -> Resul
 
     #[cfg(target_os = "macos")]
     {
+        let p = std::path::Path::new(&path);
         if p.exists() {
             let _ = std::process::Command::new("open")
                 .args(["-R", &path])
@@ -252,6 +253,7 @@ pub async fn open_file_in_manager(path: String, _app_handle: AppHandle) -> Resul
 
     #[cfg(target_os = "linux")]
     {
+        let p = std::path::Path::new(&path);
         let target = if p.is_dir() {
             p
         } else {
