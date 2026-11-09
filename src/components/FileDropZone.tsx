@@ -15,7 +15,8 @@ import {
   ArrowDownToLine,
   ArrowUpToLine,
   Zap,
-  Camera
+  Camera,
+  ExternalLink
 } from 'lucide-react';
 import { DeviceInfo, TransferProgress, ReceivedFile } from '../types/pulse';
 import { isTauri } from '../hooks/usePulseEvents';
@@ -207,14 +208,38 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     await handleWebFilesSelected(files);
   };
 
+  const handleOpenFile = async (path: string, downloadUrl?: string) => {
+    if (isTauri()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('open_file', { path });
+        return;
+      } catch (err) {
+        console.warn('invoke open_file failed, trying openPath:', err);
+      }
+
+      try {
+        const { openPath } = await import('@tauri-apps/plugin-opener');
+        await openPath(path);
+        return;
+      } catch (err) {
+        console.error('Failed to open file path with opener:', err);
+      }
+    }
+
+    if (downloadUrl) {
+      window.open(downloadUrl, '_blank');
+    }
+  };
+
   const handleOpenFolder = async (path: string, downloadUrl?: string) => {
     if (isTauri()) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('open_file_in_manager', { path });
+        await invoke('open_file_folder', { path });
         return;
       } catch (err) {
-        console.warn('invoke open_file_in_manager failed, trying openPath:', err);
+        console.warn('invoke open_file_folder failed, trying openPath:', err);
       }
 
       try {
@@ -574,24 +599,38 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
                   </div>
                 </div>
 
-                {item.download_url && !isTauri() ? (
-                  <a
-                    href={item.download_url}
-                    download={item.file_name}
-                    className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all active:scale-95 shrink-0 shadow-sm"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download</span>
-                  </a>
-                ) : (
-                  <button
-                    onClick={() => handleOpenFolder(item.path, item.download_url)}
-                    className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-medium bg-[#272727] hover:bg-[#323232] text-zinc-300 hover:text-white transition-colors active:scale-95 shrink-0"
-                  >
-                    <FolderOpen className="w-3.5 h-3.5" />
-                    <span>Open</span>
-                  </button>
-                )}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {item.download_url && !isTauri() ? (
+                    <a
+                      href={item.download_url}
+                      download={item.file_name}
+                      className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all active:scale-95 shadow-sm"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download</span>
+                    </a>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleOpenFile(item.path, item.download_url)}
+                        title="Open file with default app"
+                        className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition-all active:scale-95"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Open</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleOpenFolder(item.path, item.download_url)}
+                        title="Show in file manager / folder"
+                        className="flex items-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs font-medium bg-[#272727] hover:bg-[#323232] text-zinc-300 hover:text-white transition-colors active:scale-95"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5 text-zinc-400" />
+                        <span className="hidden sm:inline">Folder</span>
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </div>

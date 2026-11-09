@@ -215,8 +215,79 @@ fn open_android_file_via_jni(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "android")]
+fn open_android_folder_via_jni(path: &str) -> Result<(), String> {
+    use jni::objects::JValue;
+
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
+        .map_err(|e| format!("Failed to get Java VM: {:?}", e))?;
+    let mut env = vm
+        .attach_current_thread()
+        .map_err(|e| format!("Failed to attach JNI thread: {:?}", e))?;
+
+    let class = env
+        .find_class("com/pulsedrop/client/MainActivity")
+        .map_err(|e| format!("Failed to find MainActivity: {:?}", e))?;
+
+    let j_path = env
+        .new_string(path)
+        .map_err(|e| format!("Failed to create JString: {:?}", e))?;
+
+    let _ = env
+        .call_static_method(
+            class,
+            "openFileFolder",
+            "(Ljava/lang/String;)Z",
+            &[JValue::Object(&j_path)],
+        )
+        .map_err(|e| format!("Failed to invoke openFileFolder: {:?}", e))?;
+
+    Ok(())
+}
+
 #[tauri::command]
-pub async fn open_file_in_manager(path: String, _app_handle: AppHandle) -> Result<(), String> {
+pub async fn open_file(path: String, _app_handle: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &path])
+            .spawn();
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg(&path)
+            .spawn();
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open")
+            .arg(&path)
+            .spawn();
+        return Ok(());
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        return open_android_file_via_jni(&path);
+    }
+
+    #[cfg(target_os = "ios")]
+    {
+        return Ok(());
+    }
+
+    #[allow(unreachable_code)]
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_file_folder(path: String, _app_handle: AppHandle) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let p = std::path::Path::new(&path);
@@ -267,8 +338,7 @@ pub async fn open_file_in_manager(path: String, _app_handle: AppHandle) -> Resul
 
     #[cfg(target_os = "android")]
     {
-        let _ = open_android_file_via_jni(&path);
-        return Ok(());
+        return open_android_folder_via_jni(&path);
     }
 
     #[cfg(target_os = "ios")]
@@ -278,4 +348,9 @@ pub async fn open_file_in_manager(path: String, _app_handle: AppHandle) -> Resul
 
     #[allow(unreachable_code)]
     Ok(())
+}
+
+#[tauri::command]
+pub async fn open_file_in_manager(path: String, app_handle: AppHandle) -> Result<(), String> {
+    open_file_folder(path, app_handle).await
 }

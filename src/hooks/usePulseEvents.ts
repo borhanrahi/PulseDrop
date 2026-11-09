@@ -391,10 +391,30 @@ export function usePulseEvents() {
       unlistenList.push(u6);
 
       const u7 = await listen<TransferProgress>('transfer-progress', (event) => {
-        setActiveTransfers((prev) => ({
-          ...prev,
-          [event.payload.transfer_id]: event.payload,
-        }));
+        const now = Date.now();
+        setActiveTransfers((prev) => {
+          const prevItem = prev[event.payload.transfer_id];
+          let speed_bps = event.payload.speed_bps;
+
+          if ((!speed_bps || speed_bps === 0) && prevItem && event.payload.status === 'transferring') {
+            const timeDiff = (now - ((prevItem as any)._lastUpdateTime || now)) / 1000;
+            const bytesDiff = event.payload.bytes_transferred - prevItem.bytes_transferred;
+            if (timeDiff > 0.1 && bytesDiff > 0) {
+              speed_bps = Math.round(bytesDiff / timeDiff);
+            } else if (prevItem.speed_bps) {
+              speed_bps = prevItem.speed_bps;
+            }
+          }
+
+          return {
+            ...prev,
+            [event.payload.transfer_id]: {
+              ...event.payload,
+              speed_bps: event.payload.status === 'completed' ? 0 : speed_bps,
+              _lastUpdateTime: now,
+            } as any,
+          };
+        });
       });
       unlistenList.push(u7);
 

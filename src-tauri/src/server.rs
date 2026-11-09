@@ -325,6 +325,25 @@ async fn upload_handler(
         .to_string();
 
     // 3. Resolve target download directory
+    #[cfg(target_os = "android")]
+    let download_dir = {
+        let pub_dl = std::path::PathBuf::from("/storage/emulated/0/Download");
+        if pub_dl.exists() {
+            pub_dl
+        } else {
+            let sd_dl = std::path::PathBuf::from("/sdcard/Download");
+            if sd_dl.exists() {
+                sd_dl
+            } else {
+                app_handle
+                    .path()
+                    .download_dir()
+                    .unwrap_or_else(|_| std::env::temp_dir())
+            }
+        }
+    };
+
+    #[cfg(not(target_os = "android"))]
     let download_dir = app_handle
         .path()
         .download_dir()
@@ -355,6 +374,7 @@ async fn upload_handler(
     let mut body_stream = req.into_body().into_data_stream();
     let mut bytes_transferred: u64 = 0;
     let mut last_emit = std::time::Instant::now();
+    let mut last_bytes: u64 = 0;
 
     while let Some(chunk_res) = body_stream.next().await {
         let chunk = chunk_res
@@ -365,7 +385,17 @@ async fn upload_handler(
 
         bytes_transferred += chunk.len() as u64;
 
-        if last_emit.elapsed().as_millis() >= 120 {
+        let elapsed = last_emit.elapsed();
+        if elapsed.as_millis() >= 120 {
+            let elapsed_secs = elapsed.as_secs_f64();
+            let speed = if elapsed_secs > 0.0 && bytes_transferred > last_bytes {
+                ((bytes_transferred - last_bytes) as f64 / elapsed_secs) as u64
+            } else {
+                0
+            };
+            last_bytes = bytes_transferred;
+            last_emit = std::time::Instant::now();
+
             let _ = app_handle.emit(
                 "transfer-progress",
                 TransferProgress {
@@ -374,9 +404,10 @@ async fn upload_handler(
                     bytes_transferred,
                     total_bytes: if total_bytes > 0 { total_bytes } else { bytes_transferred },
                     status: "transferring".to_string(),
+                    speed_bps: Some(speed),
+                    direction: Some("incoming".to_string()),
                 },
             );
-            last_emit = std::time::Instant::now();
         }
     }
 
@@ -393,6 +424,8 @@ async fn upload_handler(
             bytes_transferred,
             total_bytes: bytes_transferred,
             status: "completed".to_string(),
+            speed_bps: Some(0),
+            direction: Some("incoming".to_string()),
         },
     );
 

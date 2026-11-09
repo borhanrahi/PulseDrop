@@ -19,6 +19,14 @@ class MainActivity : TauriActivity() {
         try {
           val file = File(filePath)
           if (file.exists()) {
+            // Index file with MediaScanner so system apps recognize it immediately
+            android.media.MediaScannerConnection.scanFile(
+              activity,
+              arrayOf(file.absolutePath),
+              null,
+              null
+            )
+
             val uri: Uri = FileProvider.getUriForFile(
               activity,
               "${activity.packageName}.fileprovider",
@@ -34,7 +42,7 @@ class MainActivity : TauriActivity() {
               setDataAndType(uri, mimeType)
               flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
             }
-            activity.startActivity(Intent.createChooser(intent, "Open with"))
+            activity.startActivity(Intent.createChooser(intent, "Open file with"))
           } else {
             val downloadIntent = Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
               flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -49,6 +57,29 @@ class MainActivity : TauriActivity() {
             activity.startActivity(downloadIntent)
           } catch (_: Exception) {}
         }
+      }
+      return true
+    }
+
+    @JvmStatic
+    fun openFileFolder(filePath: String): Boolean {
+      val activity = currentActivity ?: return false
+      activity.runOnUiThread {
+        try {
+          val file = File(filePath)
+          if (file.exists()) {
+            android.media.MediaScannerConnection.scanFile(
+              activity,
+              arrayOf(file.absolutePath),
+              null,
+              null
+            )
+          }
+          val downloadIntent = Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+          }
+          activity.startActivity(downloadIntent)
+        } catch (_: Exception) {}
       }
       return true
     }

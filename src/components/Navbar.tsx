@@ -10,6 +10,7 @@ import {
   Camera
 } from 'lucide-react';
 import { DeviceInfo } from '../types/pulse';
+import { APP_VERSION } from '../version';
 
 interface NavbarProps {
   currentTab: 'drop' | 'radar' | 'clipboard' | 'settings';
@@ -161,7 +162,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Footer info */}
         <div className="pt-3 border-t border-[#272727] flex items-center justify-between text-[11px] text-zinc-500">
           <span>Zero cloud transfer</span>
-          <span className="font-mono">v0.1.0</span>
+          <span className="font-mono">v{APP_VERSION}</span>
         </div>
       </aside>
 
@@ -174,6 +175,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-white tracking-tight">PulseDrop</span>
+              <span className="text-[10px] font-mono text-zinc-400 font-medium">v{APP_VERSION}</span>
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
                 Online

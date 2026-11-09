@@ -193,7 +193,7 @@ pub async fn send_file_to_peer(
     let upload_url = format!("http://{}:{}/upload", peer.ip, peer.port);
 
     let bytes_transferred = Arc::new(AtomicU64::new(0));
-    let last_emit_instant = Arc::new(tokio::sync::Mutex::new(Instant::now()));
+    let last_emit_instant = Arc::new(tokio::sync::Mutex::new((Instant::now(), 0u64)));
 
     let stream = tokio_util::io::ReaderStream::new(file);
 
@@ -209,26 +209,38 @@ pub async fn send_file_to_peer(
             let transferred = bytes_counter.fetch_add(chunk.len() as u64, Ordering::Relaxed)
                 + (chunk.len() as u64);
 
-            let progress = TransferProgress {
-                transfer_id: transfer_id_clone.clone(),
-                file_name: file_name_clone.clone(),
-                bytes_transferred: transferred,
-                total_bytes,
-                status: if transferred >= total_bytes {
-                    "completed".to_string()
-                } else {
-                    "transferring".to_string()
-                },
-            };
-
-            // Non-blocking throttled UI update
             let app_h = app_clone.clone();
             let chan = channel_clone.clone();
             let le = last_emit.clone();
+            let t_id = transfer_id_clone.clone();
+            let f_name = file_name_clone.clone();
+
             tokio::spawn(async move {
                 let mut guard = le.lock().await;
-                if guard.elapsed().as_millis() >= 120 || transferred >= total_bytes {
-                    *guard = Instant::now();
+                let elapsed = guard.0.elapsed();
+                if elapsed.as_millis() >= 120 || transferred >= total_bytes {
+                    let elapsed_secs = elapsed.as_secs_f64();
+                    let speed = if elapsed_secs > 0.0 && transferred > guard.1 {
+                        ((transferred - guard.1) as f64 / elapsed_secs) as u64
+                    } else {
+                        0
+                    };
+                    *guard = (Instant::now(), transferred);
+
+                    let progress = TransferProgress {
+                        transfer_id: t_id,
+                        file_name: f_name,
+                        bytes_transferred: transferred,
+                        total_bytes,
+                        status: if transferred >= total_bytes {
+                            "completed".to_string()
+                        } else {
+                            "transferring".to_string()
+                        },
+                        speed_bps: Some(speed),
+                        direction: Some("outgoing".to_string()),
+                    };
+
                     if let Some(ch) = &chan {
                         let _ = ch.send(progress.clone());
                     }

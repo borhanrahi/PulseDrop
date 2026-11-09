@@ -44,3 +44,8 @@ if (fs.existsSync(androidPropPath)) {
   fs.writeFileSync(androidPropPath, props);
 }
 
+// 5. src/version.ts
+const versionTsPath = path.join(rootDir, 'src', 'version.ts');
+fs.writeFileSync(versionTsPath, `export const APP_VERSION = '${version}';\n`);
+console.log(`Updated src/version.ts to ${version}`);
+

@@ -35,6 +35,10 @@ pub struct TransferProgress {
     pub bytes_transferred: u64,
     pub total_bytes: u64,
     pub status: String, // "transferring" | "completed" | "failed"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speed_bps: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
 }
 
 pub struct AppState {
