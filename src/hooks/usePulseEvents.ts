@@ -334,6 +334,8 @@ export function usePulseEvents() {
           return [...filtered, event.payload];
         });
         setNearbyPeers((prev) => prev.filter((p) => p.id !== event.payload.id));
+        setLastPairedPeer(event.payload);
+        setLastPairedPeerTimestamp(Date.now());
       });
       unlistenList.push(u1);
 
@@ -575,10 +577,21 @@ export function usePulseEvents() {
   const sendFiles = async (targetPeerId: string, files: File[]) => {
     if (!files || files.length === 0) return;
 
-    if (isTauri()) {
+    const targetPeer = pairedPeers.find((p) => p.id === targetPeerId);
+
+    // If running in Tauri on desktop and the files have real local filesystem paths
+    const hasNativePath = files.every(
+      (f: any) =>
+        typeof f.path === 'string' &&
+        f.path.length > 0 &&
+        !f.path.startsWith('blob:') &&
+        !f.path.startsWith('content:')
+    );
+
+    if (isTauri() && hasNativePath) {
       const { invoke, Channel } = await import('@tauri-apps/api/core');
       const channel = new Channel<TransferProgress>();
-      const paths = files.map((f: any) => f.path || f.name);
+      const paths = files.map((f: any) => f.path);
       await invoke('send_files', {
         peerId: targetPeerId,
         filePaths: paths,
@@ -587,7 +600,7 @@ export function usePulseEvents() {
       return;
     }
 
-    // Web mode upload to local relay
+    // Direct HTTP streaming to peer (works across Android APK, iOS, Web, Desktop)
     for (const file of files) {
       const transferId = 'tx-' + Math.random().toString(36).substring(2, 9);
 
@@ -610,8 +623,18 @@ export function usePulseEvents() {
 
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/upload');
 
+        // If target peer has direct IP & port on the LAN:
+        const targetUrl =
+          targetPeer?.ip && targetPeer?.port
+            ? `http://${targetPeer.ip}:${targetPeer.port}/upload`
+            : '/api/upload';
+
+        xhr.open('POST', targetUrl);
+
+        if (targetPeer?.token) {
+          xhr.setRequestHeader('Authorization', `Bearer ${targetPeer.token}`);
+        }
         xhr.setRequestHeader('x-file-name', encodeURIComponent(file.name));
         xhr.setRequestHeader('x-file-size', file.size.toString());
         xhr.setRequestHeader('x-file-type', file.type || 'application/octet-stream');

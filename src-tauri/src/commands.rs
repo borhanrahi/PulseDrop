@@ -183,3 +183,97 @@ pub async fn get_download_dir(app_handle: AppHandle) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     Ok(dir.to_string_lossy().to_string())
 }
+
+#[cfg(target_os = "android")]
+fn open_android_file_via_jni(path: &str) -> Result<(), String> {
+    use jni::objects::JValue;
+
+    let vm = tauri::android_binding::get_java_vm()
+        .map_err(|e| format!("Failed to get Java VM: {:?}", e))?;
+    let mut env = vm
+        .attach_current_thread()
+        .map_err(|e| format!("Failed to attach JNI thread: {:?}", e))?;
+
+    let class = env
+        .find_class("com/pulsedrop/client/MainActivity")
+        .map_err(|e| format!("Failed to find MainActivity: {:?}", e))?;
+
+    let j_path = env
+        .new_string(path)
+        .map_err(|e| format!("Failed to create JString: {:?}", e))?;
+
+    let _ = env
+        .call_static_method(
+            class,
+            "openFilePath",
+            "(Ljava/lang/String;)Z",
+            &[JValue::Object(&j_path)],
+        )
+        .map_err(|e| format!("Failed to invoke openFilePath: {:?}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_file_in_manager(path: String, _app_handle: AppHandle) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+
+    #[cfg(target_os = "windows")]
+    {
+        if p.exists() {
+            let _ = std::process::Command::new("explorer")
+                .arg(format!("/select,{}", path))
+                .spawn();
+        } else if let Some(parent) = p.parent() {
+            let _ = std::process::Command::new("explorer")
+                .arg(parent)
+                .spawn();
+        } else {
+            let _ = std::process::Command::new("explorer")
+                .arg(&path)
+                .spawn();
+        }
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if p.exists() {
+            let _ = std::process::Command::new("open")
+                .args(["-R", &path])
+                .spawn();
+        } else if let Some(parent) = p.parent() {
+            let _ = std::process::Command::new("open")
+                .arg(parent)
+                .spawn();
+        }
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let target = if p.is_dir() {
+            p
+        } else {
+            p.parent().unwrap_or(p)
+        };
+        let _ = std::process::Command::new("xdg-open")
+            .arg(target)
+            .spawn();
+        return Ok(());
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        let _ = open_android_file_via_jni(&path);
+        return Ok(());
+    }
+
+    #[cfg(target_os = "ios")]
+    {
+        return Ok(());
+    }
+
+    #[allow(unreachable_code)]
+    Ok(())
+}

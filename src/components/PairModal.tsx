@@ -62,12 +62,12 @@ export const PairModal: React.FC<PairModalProps> = ({
       isOpen &&
       lastPairedPeer &&
       lastPairedPeerTimestamp &&
-      lastPairedPeerTimestamp >= modalOpenedAt
+      lastPairedPeerTimestamp >= modalOpenedAt - 1000
     ) {
       setPairingSuccess(lastPairedPeer);
       const timer = setTimeout(() => {
         onClose();
-      }, 1800);
+      }, 1500);
       return () => clearTimeout(timer);
     }
   }, [isOpen, lastPairedPeer, lastPairedPeerTimestamp, modalOpenedAt, onClose]);

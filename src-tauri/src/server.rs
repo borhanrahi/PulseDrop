@@ -59,10 +59,11 @@ pub async fn start_server(
     let shared_state = (state.clone(), app_handle.clone());
 
     let app = Router::new()
-        .route("/health", get(health_handler))
-        .route("/pair", post(pair_handler))
+        .route("/health", get(health_handler).options(options_handler))
+        .route("/pair", post(pair_handler).options(options_handler))
         .route("/ws", get(ws_handler))
-        .route("/upload", post(upload_handler))
+        .route("/upload", post(upload_handler).options(options_handler))
+        .route("/download/{*file_name}", get(download_file_handler).options(options_handler))
         .with_state(shared_state);
 
     tokio::spawn(async move {
@@ -123,12 +124,28 @@ async fn ws_handler(
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>, app_handle: AppHandle) {
     let (mut sender, mut receiver) = socket.split();
     let mut broadcast_rx = state.ws_tx.subscribe();
+    let connected_peer_id = Arc::new(tokio::sync::Mutex::new(None::<String>));
 
-    // Task 1: forward local broadcast events to this peer socket
+    // Task 1: forward local broadcast events + 5s heartbeat Ping to detect disconnected/sleeping peers
     let mut send_task = tokio::spawn(async move {
-        while let Ok(msg_text) = broadcast_rx.recv().await {
-            if sender.send(Message::Text(msg_text.into())).await.is_err() {
-                break;
+        let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(5));
+        loop {
+            tokio::select! {
+                _ = ping_interval.tick() => {
+                    if sender.send(Message::Ping(vec![].into())).await.is_err() {
+                        break;
+                    }
+                }
+                msg_res = broadcast_rx.recv() => {
+                    match msg_res {
+                        Ok(msg_text) => {
+                            if sender.send(Message::Text(msg_text.into())).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
             }
         }
     });
@@ -136,68 +153,78 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, app_handle: AppH
     // Task 2: receive incoming wire messages from this peer socket
     let state_clone = state.clone();
     let app_handle_clone = app_handle.clone();
+    let peer_tracker = connected_peer_id.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(message)) = receiver.next().await {
-            if let Message::Text(text) = message {
-                if let Ok(wire_msg) = serde_json::from_str::<WireMessage>(&text) {
-                    match wire_msg {
-                        WireMessage::Handshake(peer_info) => {
-                            {
-                                let mut peers = state_clone.paired_peers.lock().await;
-                                peers.insert(peer_info.id.clone(), peer_info.clone());
+            match message {
+                Message::Text(text) => {
+                    if let Ok(wire_msg) = serde_json::from_str::<WireMessage>(&text) {
+                        match wire_msg {
+                            WireMessage::Handshake(peer_info) => {
+                                {
+                                    let mut id_guard = peer_tracker.lock().await;
+                                    *id_guard = Some(peer_info.id.clone());
+                                }
+                                {
+                                    let mut peers = state_clone.paired_peers.lock().await;
+                                    peers.insert(peer_info.id.clone(), peer_info.clone());
+                                }
+                                let _ = app_handle_clone.emit("peer-connected", &peer_info);
                             }
-                            let _ = app_handle_clone.emit("peer-connected", &peer_info);
-                        }
-                        WireMessage::ClipboardSync {
-                            text: clip_text,
-                            sender_name,
-                            timestamp,
-                        } => {
-                            if !*state_clone.clipboard_sync_enabled.lock().await {
-                                continue;
+                            WireMessage::ClipboardSync {
+                                text: clip_text,
+                                sender_name,
+                                timestamp,
+                            } => {
+                                if !*state_clone.clipboard_sync_enabled.lock().await {
+                                    continue;
+                                }
+
+                                // Loop prevention: hash incoming content
+                                let mut hasher = Sha256::new();
+                                hasher.update(clip_text.as_bytes());
+                                let incoming_hash = hex::encode(hasher.finalize());
+
+                                // Set hash BEFORE writing so clipboard watcher doesn't re-broadcast
+                                {
+                                    let mut last_hash = state_clone.last_clipboard_hash.lock().await;
+                                    *last_hash = incoming_hash.clone();
+                                }
+
+                                // Write to OS clipboard
+                                let _ = app_handle_clone.clipboard().write_text(clip_text.clone());
+
+                                // Notify React UI
+                                let _ = app_handle_clone.emit(
+                                    "clipboard-received",
+                                    serde_json::json!({
+                                        "text": clip_text,
+                                        "sender_name": sender_name,
+                                        "timestamp": timestamp,
+                                        "hash": incoming_hash,
+                                    }),
+                                );
                             }
-
-                            // Loop prevention: hash incoming content
-                            let mut hasher = Sha256::new();
-                            hasher.update(clip_text.as_bytes());
-                            let incoming_hash = hex::encode(hasher.finalize());
-
-                            // Set hash BEFORE writing so clipboard watcher doesn't re-broadcast
-                            {
-                                let mut last_hash = state_clone.last_clipboard_hash.lock().await;
-                                *last_hash = incoming_hash.clone();
+                            WireMessage::FileOffer {
+                                transfer_id,
+                                file_name,
+                                file_size,
+                            } => {
+                                let _ = app_handle_clone.emit(
+                                    "file-offer",
+                                    serde_json::json!({
+                                        "transfer_id": transfer_id,
+                                        "file_name": file_name,
+                                        "file_size": file_size,
+                                    }),
+                                );
                             }
-
-                            // Write to OS clipboard
-                            let _ = app_handle_clone.clipboard().write_text(clip_text.clone());
-
-                            // Notify React UI
-                            let _ = app_handle_clone.emit(
-                                "clipboard-received",
-                                serde_json::json!({
-                                    "text": clip_text,
-                                    "sender_name": sender_name,
-                                    "timestamp": timestamp,
-                                    "hash": incoming_hash,
-                                }),
-                            );
-                        }
-                        WireMessage::FileOffer {
-                            transfer_id,
-                            file_name,
-                            file_size,
-                        } => {
-                            let _ = app_handle_clone.emit(
-                                "file-offer",
-                                serde_json::json!({
-                                    "transfer_id": transfer_id,
-                                    "file_name": file_name,
-                                    "file_size": file_size,
-                                }),
-                            );
                         }
                     }
                 }
+                Message::Close(_) => break,
+                Message::Pong(_) => {}
+                _ => {}
             }
         }
     });
@@ -206,13 +233,53 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, app_handle: AppH
         _ = (&mut send_task) => recv_task.abort(),
         _ = (&mut recv_task) => send_task.abort(),
     };
+
+    // Clean up peer state and notify UI when socket disconnects (e.g. mobile screen off / sleep)
+    let peer_id_opt = connected_peer_id.lock().await.clone();
+    if let Some(peer_id) = peer_id_opt {
+        {
+            let mut peers = state.paired_peers.lock().await;
+            peers.remove(&peer_id);
+        }
+        let _ = app_handle.emit("peer-disconnected", &peer_id);
+    }
+}
+
+fn percent_decode_filename(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut decoded = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16) {
+                decoded.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(decoded).unwrap_or_else(|_| s.to_string())
+}
+
+async fn options_handler() -> impl axum::response::IntoResponse {
+    (
+        StatusCode::OK,
+        [
+            (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+            (header::ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, OPTIONS"),
+            (header::ACCESS_CONTROL_ALLOW_HEADERS, "*"),
+        ],
+        "",
+    )
 }
 
 async fn upload_handler(
     State((state, app_handle)): State<(Arc<AppState>, AppHandle)>,
     headers: HeaderMap,
     req: Request,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<impl axum::response::IntoResponse, (StatusCode, String)> {
     // 1. Validate Bearer Token
     let local_token = state.local_device.lock().await.token.clone();
     let auth_header = headers
@@ -229,7 +296,7 @@ async fn upload_handler(
     let raw_file_name = headers
         .get("x-file-name")
         .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string())
+        .map(|s| percent_decode_filename(s))
         .unwrap_or_else(|| {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -330,6 +397,7 @@ async fn upload_handler(
     );
 
     let saved_path_str = target_path.to_string_lossy().to_string();
+    let port = state.local_device.lock().await.port;
     let _ = app_handle.emit(
         "file-received",
         serde_json::json!({
@@ -337,12 +405,58 @@ async fn upload_handler(
             "file_name": safe_file_name,
             "path": saved_path_str,
             "bytes": bytes_transferred,
+            "download_url": format!("http://127.0.0.1:{}/download/{}", port, safe_file_name),
         }),
     );
 
-    Ok(Json(serde_json::json!({
-        "status": "ok",
-        "saved_path": saved_path_str,
-        "bytes": bytes_transferred,
-    })))
+    let res_headers = [
+        (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
+    ];
+
+    Ok((
+        res_headers,
+        Json(serde_json::json!({
+            "status": "ok",
+            "saved_path": saved_path_str,
+            "bytes": bytes_transferred,
+        })),
+    ))
+}
+
+async fn download_file_handler(
+    State((_state, app_handle)): State<(Arc<AppState>, AppHandle)>,
+    axum::extract::Path(file_name): axum::extract::Path<String>,
+) -> Result<impl axum::response::IntoResponse, (StatusCode, String)> {
+    let download_dir = app_handle
+        .path()
+        .download_dir()
+        .unwrap_or_else(|_| std::env::temp_dir());
+
+    let safe_file_name = std::path::Path::new(&file_name)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "Invalid file name".to_string()))?
+        .to_string();
+
+    let target_path = download_dir.join(&safe_file_name);
+    if !target_path.exists() {
+        return Err((StatusCode::NOT_FOUND, "File not found".to_string()));
+    }
+
+    let file = tokio::fs::File::open(&target_path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read file: {}", e)))?;
+
+    let stream = tokio_util::io::ReaderStream::new(file);
+    let body = axum::body::Body::from_stream(stream);
+
+    let content_disposition = format!("attachment; filename=\"{}\"", safe_file_name);
+
+    let headers = [
+        (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+        (header::CONTENT_DISPOSITION, content_disposition),
+        (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".to_string()),
+    ];
+
+    Ok((headers, body))
 }

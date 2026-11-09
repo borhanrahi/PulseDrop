@@ -42,16 +42,36 @@ pub async fn connect_to_peer(
     }
     let _ = app_handle.emit("peer-connected", &peer);
 
-    // 3. Task: forward local clipboard and file offers to peer
+    // 3. Task: forward local clipboard and file offers to peer with 5s keepalive ping
     let mut broadcast_rx = state.ws_tx.subscribe();
+    let mut ping_interval = tokio::time::interval(std::time::Duration::from_secs(5));
     let mut send_task = tokio::spawn(async move {
-        while let Ok(msg_text) = broadcast_rx.recv().await {
-            if write
-                .send(TungsteniteMessage::Text(msg_text.into()))
-                .await
-                .is_err()
-            {
-                break;
+        loop {
+            tokio::select! {
+                res = broadcast_rx.recv() => {
+                    match res {
+                        Ok(msg_text) => {
+                            if write
+                                .send(TungsteniteMessage::Text(msg_text.into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+                _ = ping_interval.tick() => {
+                    if write
+                        .send(TungsteniteMessage::Ping(vec![].into()))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
             }
         }
     });
@@ -62,60 +82,65 @@ pub async fn connect_to_peer(
     let peer_id_clone = peer.id.clone();
     let mut recv_task = tokio::spawn(async move {
         while let Some(Ok(message)) = read.next().await {
-            if let TungsteniteMessage::Text(text) = message {
-                let text_str = text.as_str();
-                if let Ok(wire_msg) = serde_json::from_str::<WireMessage>(text_str) {
-                    match wire_msg {
-                        WireMessage::Handshake(remote_info) => {
-                            let mut peers = state_clone.paired_peers.lock().await;
-                            peers.insert(remote_info.id.clone(), remote_info.clone());
-                            let _ = app_handle_clone.emit("peer-connected", &remote_info);
-                        }
-                        WireMessage::ClipboardSync {
-                            text: clip_text,
-                            sender_name,
-                            timestamp,
-                        } => {
-                            if !*state_clone.clipboard_sync_enabled.lock().await {
-                                continue;
+            match message {
+                TungsteniteMessage::Text(text) => {
+                    let text_str = text.as_str();
+                    if let Ok(wire_msg) = serde_json::from_str::<WireMessage>(text_str) {
+                        match wire_msg {
+                            WireMessage::Handshake(remote_info) => {
+                                let mut peers = state_clone.paired_peers.lock().await;
+                                peers.insert(remote_info.id.clone(), remote_info.clone());
+                                let _ = app_handle_clone.emit("peer-connected", &remote_info);
                             }
+                            WireMessage::ClipboardSync {
+                                text: clip_text,
+                                sender_name,
+                                timestamp,
+                            } => {
+                                if !*state_clone.clipboard_sync_enabled.lock().await {
+                                    continue;
+                                }
 
-                            let mut hasher = Sha256::new();
-                            hasher.update(clip_text.as_bytes());
-                            let incoming_hash = hex::encode(hasher.finalize());
+                                let mut hasher = Sha256::new();
+                                hasher.update(clip_text.as_bytes());
+                                let incoming_hash = hex::encode(hasher.finalize());
 
-                            {
-                                let mut last_hash = state_clone.last_clipboard_hash.lock().await;
-                                *last_hash = incoming_hash.clone();
+                                {
+                                    let mut last_hash = state_clone.last_clipboard_hash.lock().await;
+                                    *last_hash = incoming_hash.clone();
+                                }
+
+                                let _ = app_handle_clone.clipboard().write_text(clip_text.clone());
+                                let _ = app_handle_clone.emit(
+                                    "clipboard-received",
+                                    serde_json::json!({
+                                        "text": clip_text,
+                                        "sender_name": sender_name,
+                                        "timestamp": timestamp,
+                                        "hash": incoming_hash,
+                                    }),
+                                );
                             }
-
-                            let _ = app_handle_clone.clipboard().write_text(clip_text.clone());
-                            let _ = app_handle_clone.emit(
-                                "clipboard-received",
-                                serde_json::json!({
-                                    "text": clip_text,
-                                    "sender_name": sender_name,
-                                    "timestamp": timestamp,
-                                    "hash": incoming_hash,
-                                }),
-                            );
-                        }
-                        WireMessage::FileOffer {
-                            transfer_id,
-                            file_name,
-                            file_size,
-                        } => {
-                            let _ = app_handle_clone.emit(
-                                "file-offer",
-                                serde_json::json!({
-                                    "transfer_id": transfer_id,
-                                    "file_name": file_name,
-                                    "file_size": file_size,
-                                }),
-                            );
+                            WireMessage::FileOffer {
+                                transfer_id,
+                                file_name,
+                                file_size,
+                            } => {
+                                let _ = app_handle_clone.emit(
+                                    "file-offer",
+                                    serde_json::json!({
+                                        "transfer_id": transfer_id,
+                                        "file_name": file_name,
+                                        "file_size": file_size,
+                                    }),
+                                );
+                            }
                         }
                     }
                 }
+                TungsteniteMessage::Close(_) => break,
+                TungsteniteMessage::Pong(_) => {}
+                _ => {}
             }
         }
 

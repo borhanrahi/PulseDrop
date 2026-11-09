@@ -101,7 +101,11 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
       return;
     }
 
-    if (isTauri()) {
+    const isMobile =
+      typeof navigator !== 'undefined' &&
+      /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+
+    if (isTauri() && !isMobile) {
       try {
         const { open } = await import('@tauri-apps/plugin-dialog');
         const selected = await open({
@@ -187,24 +191,43 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     const files = Array.from(e.dataTransfer.files);
     if (files.length === 0) return;
 
-    if (isTauri()) {
-      const paths = files.map((f: any) => f.path || f.name).filter(Boolean);
+    const isMobile =
+      typeof navigator !== 'undefined' &&
+      /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+
+    if (isTauri() && !isMobile) {
+      const paths = files
+        .map((f: any) => f.path)
+        .filter((p): p is string => typeof p === 'string' && p.length > 0);
       if (paths.length > 0) {
         await triggerTauriSend(targetPeerId, paths);
+        return;
       }
-    } else {
-      await handleWebFilesSelected(files);
     }
+    await handleWebFilesSelected(files);
   };
 
-  const handleOpenFolder = async (path: string) => {
+  const handleOpenFolder = async (path: string, downloadUrl?: string) => {
     if (isTauri()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('open_file_in_manager', { path });
+        return;
+      } catch (err) {
+        console.warn('invoke open_file_in_manager failed, trying openPath:', err);
+      }
+
       try {
         const { openPath } = await import('@tauri-apps/plugin-opener');
         await openPath(path);
+        return;
       } catch (err) {
-        console.error('Failed to open file path:', err);
+        console.error('Failed to open file path with opener:', err);
       }
+    }
+
+    if (downloadUrl) {
+      window.open(downloadUrl, '_blank');
     }
   };
 
@@ -551,7 +574,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
                   </div>
                 </div>
 
-                {item.download_url ? (
+                {item.download_url && !isTauri() ? (
                   <a
                     href={item.download_url}
                     download={item.file_name}
@@ -562,7 +585,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
                   </a>
                 ) : (
                   <button
-                    onClick={() => handleOpenFolder(item.path)}
+                    onClick={() => handleOpenFolder(item.path, item.download_url)}
                     className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-medium bg-[#272727] hover:bg-[#323232] text-zinc-300 hover:text-white transition-colors active:scale-95 shrink-0"
                   >
                     <FolderOpen className="w-3.5 h-3.5" />

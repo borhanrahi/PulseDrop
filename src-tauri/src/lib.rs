@@ -66,6 +66,7 @@ pub fn run() {
             commands::toggle_clipboard_sync,
             commands::send_files,
             commands::get_download_dir,
+            commands::open_file_in_manager,
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
